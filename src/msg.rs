@@ -6,7 +6,8 @@ use cw20::Cw20ReceiveMsg;
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct InstantiateMsg {
-    pub token_address: String,
+    pub staked_token_denom: String,
+    pub reward_denom: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
@@ -33,8 +34,7 @@ pub enum ExecuteMsg {
     WithdrawStake { cap: Option<Uint128> },
 
     /// This accepts a properly-encoded ReceiveMsg from a cw20 contract
-
-    ReceiveReward {}
+    ReceiveReward {},
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]

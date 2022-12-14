@@ -23,7 +23,8 @@ pub fn instantiate(
 ) -> StdResult<Response> {
     deps.api.addr_validate(&msg.token_address.as_str())?;
     let state = State {
-        token_address: msg.token_address,
+        staked_token_denom: msg.staked_token_denom,
+        reward_denom: msg.token_address,
         global_index: Decimal::zero(),
         total_balance: Uint128::zero(),
         prev_reward_balance: Uint128::zero(),
@@ -59,7 +60,7 @@ pub fn execute_update_reward_index(deps: DepsMut, env: Env) -> Result<Response, 
 
     // For querying the balance of the contract itself, we can use the querier
     // We should find a way to add other token denoms for trasuary
-    // easyest way is to add a token_address field to the state and migrate the contract
+    // For that we should store more than one state with state id
     let current_balance: Uint128 = deps
         .querier
         .query_balance(&env.contract.address, &state.token_address)?;
@@ -118,10 +119,21 @@ pub fn execute_receive_reward(
         // update reward index
         update_reward_index();
 
-        let reward_amount = holder
-            .balance
-            .multiply_ratio(state.global_index - holder.index, Decimal::one())
-            + holder.pending_rewards;
+        let reward_amount =
+            holder.balance.mul(state.global_index - holder.index) + holder.pending_rewards;
+
+        //send rewards to the holder
+        let res = Response::new()
+            .add_message(CosmosMsg::Bank(BankMsg::Send {
+                to_address: info.sender.to_string(),
+                amount: vec![Coin {
+                    denom: state.token_address.to_string(),
+                    amount: decimal256_to_u128(reward_amount)?,
+                }],
+            }))
+            .add_attributes(attributes);
+
+        Ok(res)
     }
 }
 

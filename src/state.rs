@@ -7,7 +7,8 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct State {
-    pub token_address: String,
+    pub staked_token_denom: String,
+    pub reward_denom: String,
     pub global_index: Decimal,
     pub total_balance: Uint128,
     pub prev_reward_balance: Uint128,
