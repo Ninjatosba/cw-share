@@ -33,7 +33,8 @@ pub enum ExecuteMsg {
     WithdrawStake { cap: Option<Uint128> },
 
     /// This accepts a properly-encoded ReceiveMsg from a cw20 contract
-    Receive(Cw20ReceiveMsg),
+
+    ReceiveReward {}
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]

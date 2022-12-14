@@ -44,7 +44,7 @@ pub fn execute(
         ExecuteMsg::UpdateRewardIndex {} => execute_update_reward_index(deps, env),
         ExecuteMsg::UnbondStake { amount } => execute_unbound(deps, env, info, amount),
         ExecuteMsg::WithdrawStake { cap } => execute_withdraw_stake(deps, env, info, cap),
-        ExecuteMsg::Receive(msg) => execute_receive(deps, env, info, msg),
+        ExecuteMsg::ReceiveReward {} => execute_receive_reward(deps, env, info),
     }
 }
 
@@ -58,6 +58,8 @@ pub fn execute_update_reward_index(deps: DepsMut, env: Env) -> Result<Response, 
     }
 
     // For querying the balance of the contract itself, we can use the querier
+    // We should find a way to add other token denoms for trasuary
+    // easyest way is to add a token_address field to the state and migrate the contract
     let current_balance: Uint128 = deps
         .querier
         .query_balance(&env.contract.address, &state.token_address)?;
@@ -83,22 +85,43 @@ pub fn execute_update_reward_index(deps: DepsMut, env: Env) -> Result<Response, 
     Ok(res)
 }
 
-pub fn execute_receive(
+pub fn update_reward_index() {
+    let mut state = STATE.load(deps.storage)?;
+    let current_balance: Uint128 = deps
+        .querier
+        .query_balance(&env.contract.address, &state.token_address)?;
+    let previous_balance = state.prev_reward_balance;
+
+    // claimed_rewards = current_balance - prev_balance;
+    let claimed_rewards = balance_res.balance.checked_sub(previous_balance)?;
+
+    state.prev_reward_balance = current_balance;
+
+    // global_index += claimed_rewards / total_balance;
+    state.global_index = state
+        .global_index
+        .add(Decimal::from_ratio(claimed_rewards, state.total_balance));
+
+    STATE.save(deps.storage, &state)?;
+}
+
+pub fn execute_receive_reward(
     deps: DepsMut,
     env: Env,
     info: MessageInfo,
-    msg: Cw20ReceiveMsg,
 ) -> Result<Response, ContractError> {
-    let config = STATE.load(deps.storage)?;
+    let state = STATE.load(deps.storage)?;
 
-    if info.sender != config.token_address {
-        return Err(ContractError::Unauthorized {});
-    }
+    let mut holder = HOLDERS.load(deps.storage, (info.sender.as_str()))?;
+    if holder.balance.is_zero() {
+        return Err(ContractError::NoBond {});
+        // update reward index
+        update_reward_index();
 
-    let msg: ReceiveMsg = from_binary(&wrapper.msg)?;
-    match msg {
-        ReceiveMsg::BondStake {} => execute_bond(deps, env, info, wrapper.sender, wrapper.amount),
-        ReceiveMsg::UpdateRewardIndex {} => execute_update_reward_index(deps, env),
+        let reward_amount = holder
+            .balance
+            .multiply_ratio(state.global_index - holder.index, Decimal::one())
+            + holder.pending_rewards;
     }
 }
 
