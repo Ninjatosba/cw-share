@@ -41,7 +41,6 @@ pub fn execute(
     msg: ExecuteMsg,
 ) -> Result<Response, ContractError> {
     match msg {
-        ExecuteMsg::ClaimRewards { recipient } => execute_claim_rewards(deps, env, info, recipient),
         ExecuteMsg::UpdateRewardIndex {} => execute_update_reward_index(deps, env),
         ExecuteMsg::UnbondStake { amount } => execute_unbound(deps, env, info, amount),
         ExecuteMsg::WithdrawStake { cap } => execute_withdraw_stake(deps, env, info, cap),
@@ -58,23 +57,16 @@ pub fn execute_update_reward_index(deps: DepsMut, env: Env) -> Result<Response, 
         return Err(ContractError::NoBond {});
     }
 
-    // Load the reward contract balance
-    let msg = Cw20QueryMsg::Balance {
-        address: env.contract.address.into_string(),
-    };
-    let query = WasmQuery::Smart {
-        contract_addr: state.token_address.clone().into(),
-        msg: to_binary(&msg)?,
-    }
-    .into();
-
-    let balance_res: BalanceResponse = deps.querier.query(&query)?;
+    // For querying the balance of the contract itself, we can use the querier
+    let current_balance: Uint128 = deps
+        .querier
+        .query_balance(&env.contract.address, &state.token_address)?;
     let previous_balance = state.prev_reward_balance;
 
     // claimed_rewards = current_balance - prev_balance;
     let claimed_rewards = balance_res.balance.checked_sub(previous_balance)?;
 
-    state.prev_reward_balance = balance_res.balance;
+    state.prev_reward_balance = current_balance;
 
     // global_index += claimed_rewards / total_balance;
     state.global_index = state
@@ -91,50 +83,14 @@ pub fn execute_update_reward_index(deps: DepsMut, env: Env) -> Result<Response, 
     Ok(res)
 }
 
-pub fn execute_claim_rewards(
-    deps: DepsMut,
-    _env: Env,
-    info: MessageInfo,
-    recipient: Option<String>,
-) -> Result<Response, ContractError> {
-    let recipient = match recipient {
-        Some(value) => deps.api.addr_validate(value.as_str())?,
-        None => info.sender,
-    };
-
-    let mut state = STATE.load(deps.storage)?;
-    let holder = HOLDERS.load(deps.storage, &recipient)?;
-
-    let reward_with_decimals =
-        calculate_decimal_rewards(state.global_index, holder.index, holder.balance)?;
-
-    let all_reward_with_decimals = reward_with_decimals.add(holder.pending_rewards);
-
-    let rewards = all_reward_with_decimals * Uint128::new(1);
-
-    if rewards.is_zero() {
-        return Err(ContractError::NoRewards {});
-    }
-
-    let new_balance = (state.prev_reward_balance.checked_sub(rewards))?;
-    state.prev_reward_balance = new_balance;
-    STATE.save(deps.storage, &state)?;
-
-    Ok(Response::new()
-        .add_attribute("action", "claim_rewards")
-        .add_attribute("recipient", recipient))
-}
-
 pub fn execute_receive(
     deps: DepsMut,
     env: Env,
     info: MessageInfo,
-    wrapper: Cw20ReceiveMsg,
+    msg: Cw20ReceiveMsg,
 ) -> Result<Response, ContractError> {
     let config = STATE.load(deps.storage)?;
 
-    // TODO: move registry and check cw20 exists
-    // only registered contracts can send
     if info.sender != config.token_address {
         return Err(ContractError::Unauthorized {});
     }
@@ -170,6 +126,7 @@ pub fn execute_bond(
     });
 
     // get decimals
+    //in new bonding rewards=global_index*balance
     let rewards = calculate_decimal_rewards(state.global_index, holder.index, holder.balance)?;
 
     holder.index = state.global_index;

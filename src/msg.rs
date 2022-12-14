@@ -32,11 +32,6 @@ pub enum ExecuteMsg {
     /// Withdraws released stake
     WithdrawStake { cap: Option<Uint128> },
 
-    ////////////////////
-    /// User's operations
-    ///////////////////
-    ClaimRewards { recipient: Option<String> },
-
     /// This accepts a properly-encoded ReceiveMsg from a cw20 contract
     Receive(Cw20ReceiveMsg),
 }
