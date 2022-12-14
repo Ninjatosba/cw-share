@@ -1,15 +1,14 @@
 use cosmwasm_std::{
-    attr, entry_point, from_binary, to_binary, Binary, Decimal, Deps, DepsMut, Env, MessageInfo,
-    Response, StdError, StdResult, Uint128, WasmMsg, WasmQuery,
+    attr, entry_point, to_binary, BankMsg, Binary, Coin, CosmosMsg, Decimal, Deps, DepsMut, Env,
+    MessageInfo, Response, StdError, StdResult, Uint128, WasmMsg,
 };
 
 use crate::msg::{
     AccruedRewardsResponse, ExecuteMsg, HolderResponse, HoldersResponse, InstantiateMsg,
-    MigrateMsg, QueryMsg, ReceiveMsg, StateResponse,
+    MigrateMsg, QueryMsg, StateResponse,
 };
 use crate::state::{list_accrued_rewards, Holder, State, CLAIMS, HOLDERS, STATE};
 use crate::ContractError;
-use cw20::{BalanceResponse, Cw20ExecuteMsg, Cw20QueryMsg, Cw20ReceiveMsg};
 use cw_controllers::ClaimsResponse;
 use std::ops::{Add, Mul, Sub};
 use std::str::FromStr;
@@ -21,10 +20,9 @@ pub fn instantiate(
     _info: MessageInfo,
     msg: InstantiateMsg,
 ) -> StdResult<Response> {
-    deps.api.addr_validate(&msg.token_address.as_str())?;
     let state = State {
         staked_token_denom: msg.staked_token_denom,
-        reward_denom: msg.token_address,
+        reward_denom: msg.reward_denom,
         global_index: Decimal::zero(),
         total_balance: Uint128::zero(),
         prev_reward_balance: Uint128::zero(),
@@ -57,44 +55,32 @@ pub fn execute_update_reward_index(deps: DepsMut, env: Env) -> Result<Response, 
     if state.total_balance.is_zero() {
         return Err(ContractError::NoBond {});
     }
+    let claimed_rewards = update_reward_index(&mut state, deps, env)?;
 
     // For querying the balance of the contract itself, we can use the querier
     // We should find a way to add other token denoms for trasuary
     // For that we should store more than one state with state id
-    let current_balance: Uint128 = deps
-        .querier
-        .query_balance(&env.contract.address, &state.token_address)?;
-    let previous_balance = state.prev_reward_balance;
-
-    // claimed_rewards = current_balance - prev_balance;
-    let claimed_rewards = balance_res.balance.checked_sub(previous_balance)?;
-
-    state.prev_reward_balance = current_balance;
-
-    // global_index += claimed_rewards / total_balance;
-    state.global_index = state
-        .global_index
-        .add(Decimal::from_ratio(claimed_rewards, state.total_balance));
-
-    STATE.save(deps.storage, &state)?;
 
     let res = Response::new()
         .add_attribute("action", "update_reward_index")
         .add_attribute("claimed_rewards", claimed_rewards)
         .add_attribute("new_index", state.global_index.to_string());
-
     Ok(res)
 }
 
-pub fn update_reward_index() {
-    let mut state = STATE.load(deps.storage)?;
+pub fn update_reward_index(
+    state: &mut State,
+    deps: DepsMut,
+    env: Env,
+) -> Result<Uint128, ContractError> {
     let current_balance: Uint128 = deps
         .querier
-        .query_balance(&env.contract.address, &state.token_address)?;
+        .query_balance(&env.contract.address, &state.reward_denom)?
+        .amount;
     let previous_balance = state.prev_reward_balance;
 
     // claimed_rewards = current_balance - prev_balance;
-    let claimed_rewards = balance_res.balance.checked_sub(previous_balance)?;
+    let claimed_rewards = current_balance.checked_sub(previous_balance)?;
 
     state.prev_reward_balance = current_balance;
 
@@ -104,6 +90,7 @@ pub fn update_reward_index() {
         .add(Decimal::from_ratio(claimed_rewards, state.total_balance));
 
     STATE.save(deps.storage, &state)?;
+    Ok(claimed_rewards)
 }
 
 pub fn execute_receive_reward(
