@@ -111,7 +111,7 @@ pub fn update_rewards(
     let reward_amount = Decimal256::from_ratio(holder.balance, Uint256::one())
         .checked_mul(index_diff)?
         .checked_add(holder.dec_rewards)?;
-
+    //
     let decimals = get_decimals(reward_amount)?;
 
     //floor(reward_amount)
