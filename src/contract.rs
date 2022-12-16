@@ -1,6 +1,6 @@
 use cosmwasm_std::{
-    attr, entry_point, to_binary, BankMsg, Binary, Coin, CosmosMsg, Decimal, Deps, DepsMut, Env,
-    MessageInfo, Response, StdError, StdResult, Uint128, WasmMsg,
+    attr, entry_point, to_binary, Addr, BankMsg, Binary, Coin, CosmosMsg, Decimal, Decimal256,
+    Deps, DepsMut, Env, MessageInfo, Response, StdError, StdResult, Uint128, Uint256, WasmMsg,
 };
 
 use crate::msg::{
@@ -10,6 +10,7 @@ use crate::msg::{
 use crate::state::{list_accrued_rewards, Holder, State, CLAIMS, HOLDERS, STATE};
 use crate::ContractError;
 use cw_controllers::ClaimsResponse;
+use std::convert::TryInto;
 use std::ops::{Add, Mul, Sub};
 use std::str::FromStr;
 
@@ -23,7 +24,7 @@ pub fn instantiate(
     let state = State {
         staked_token_denom: msg.staked_token_denom,
         reward_denom: msg.reward_denom,
-        global_index: Decimal::zero(),
+        global_index: Decimal256::zero(),
         total_balance: Uint128::zero(),
         prev_reward_balance: Uint128::zero(),
     };
@@ -87,7 +88,7 @@ pub fn update_reward_index(
     // global_index += claimed_rewards / total_balance;
     state.global_index = state
         .global_index
-        .add(Decimal::from_ratio(claimed_rewards, state.total_balance));
+        .add(Decimal256::from_ratio(claimed_rewards, state.total_balance));
 
     STATE.save(deps.storage, &state)?;
     Ok(claimed_rewards)
@@ -100,28 +101,40 @@ pub fn execute_receive_reward(
 ) -> Result<Response, ContractError> {
     let state = STATE.load(deps.storage)?;
 
-    let mut holder = HOLDERS.load(deps.storage, (info.sender.as_str()))?;
+    let mut holder = HOLDERS.load(deps.storage, &Addr::unchecked(info.sender.as_str()))?;
     if holder.balance.is_zero() {
         return Err(ContractError::NoBond {});
-        // update reward index
-        update_reward_index();
-
-        let reward_amount =
-            holder.balance.mul(state.global_index - holder.index) + holder.pending_rewards;
-
-        //send rewards to the holder
-        let res = Response::new()
-            .add_message(CosmosMsg::Bank(BankMsg::Send {
-                to_address: info.sender.to_string(),
-                amount: vec![Coin {
-                    denom: state.token_address.to_string(),
-                    amount: decimal256_to_u128(reward_amount)?,
-                }],
-            }))
-            .add_attributes(attributes);
-
-        Ok(res)
     }
+    // update reward index
+    update_reward_index(&mut state, deps, env)?;
+
+    let mut rewards_uint128 = Uint128::zero();
+    //index_diff = global_index - holder.index;
+    let index_diff: Decimal256 = state.global_index - holder.index;
+    //reward_amount = holder.balance * index_diff + holder.pending_rewards;
+    let reward_amount = Decimal256::from_ratio(holder.balance, Uint256::one())
+        .checked_mul(index_diff)?
+        .checked_add(holder.pending_rewards)?;
+
+    let decimals = get_decimals(reward_amount)?;
+
+    //floor(reward_amount)
+    rewards_uint128 = (reward_amount * Uint256::one()).try_into()?;
+    holder.pending_rewards = decimals;
+
+    //send rewards to the holder
+    let res = Response::new()
+        .add_message(CosmosMsg::Bank(BankMsg::Send {
+            to_address: info.sender.to_string(),
+            amount: vec![Coin {
+                denom: state.reward_denom.to_string(),
+                amount: rewards_uint128,
+            }],
+        }))
+        .add_attribute("action", "receive_reward")
+        .add_attribute("rewards", rewards_uint128);
+
+    Ok(res)
 }
 
 pub fn execute_bond(
@@ -317,7 +330,7 @@ pub fn calculate_decimal_rewards(
 }
 
 // calculate the reward with decimal
-pub fn get_decimals(value: Decimal) -> StdResult<Decimal> {
+pub fn get_decimals(value: Decimal256) -> StdResult<Decimal256> {
     let stringed: &str = &*value.to_string();
     let parts: &[&str] = &*stringed.split('.').collect::<Vec<&str>>();
     match parts.len() {

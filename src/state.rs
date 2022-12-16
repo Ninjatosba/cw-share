@@ -1,5 +1,7 @@
 use crate::msg::HolderResponse;
-use cosmwasm_std::{Addr, Api, CanonicalAddr, Decimal, Deps, Order, StdResult, Uint128};
+use cosmwasm_std::{
+    Addr, Api, CanonicalAddr, Decimal, Decimal256, Deps, Order, StdResult, Uint128,
+};
 use cw_controllers::Claims;
 use cw_storage_plus::{Bound, Item, Map};
 use schemars::JsonSchema;
@@ -9,7 +11,7 @@ use serde::{Deserialize, Serialize};
 pub struct State {
     pub staked_token_denom: String,
     pub reward_denom: String,
-    pub global_index: Decimal,
+    pub global_index: Decimal256,
     pub total_balance: Uint128,
     pub prev_reward_balance: Uint128,
 }
@@ -18,8 +20,8 @@ pub const STATE: Item<State> = Item::new("state");
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct Holder {
     pub balance: Uint128,
-    pub index: Decimal,
-    pub pending_rewards: Decimal,
+    pub index: Decimal256,
+    pub pending_rewards: Decimal256,
 }
 
 // REWARDS (holder_addr, cw20_addr) -> Holder

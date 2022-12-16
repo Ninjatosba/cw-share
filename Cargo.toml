@@ -21,17 +21,15 @@ library = []
 
 [dependencies]
 cw0 = "0.10"
+cosmwasm-schema = "1.1.5"
 cw20 = "0.11"
 cosmwasm-std = "1.1.5"
 cw-storage-plus = "0.16.0"
 cw-controllers = "0.16.0"
+cw-utils = "0.16.0"
 cw-multi-test = "0.16.0"
 schemars = "0.8.11"
 serde = { version = "1.0.147", default-features = false, features = ["derive"] }
 thiserror = { version = "1.0.37" }
 
 
-
-[dev-dependencies]
-cosmwasm-schema = { version = "1.0.0-beta", default-features = false }
-cw20-base = "0.11"

@@ -202,7 +202,7 @@ checksum = "24bd6738c3fd59c87d2f84911c1cad1e4f2d1c58ecaa6e52549b4f78f4ed6f07"
 dependencies = [
  "cosmwasm-schema",
  "cosmwasm-std",
- "cw-storage-plus 0.16.0",
+ "cw-storage-plus",
  "cw-utils 0.16.0",
  "schemars",
  "serde",
@@ -217,7 +217,7 @@ checksum = "2dc50fde3ad87ef4e3a3e57c73d11326333318761c7655cc8cae67c40382ac91"
 dependencies = [
  "anyhow",
  "cosmwasm-std",
- "cw-storage-plus 0.16.0",
+ "cw-storage-plus",
  "cw-utils 0.16.0",
  "derivative",
  "itertools",
@@ -226,17 +226,6 @@ dependencies = [
  "schemars",
  "serde",
  "thiserror",
-]
-
-[[package]]
-name = "cw-storage-plus"
-version = "0.11.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7d7ee1963302b0ac2a9d42fe0faec826209c17452bfd36fbfd9d002a88929261"
-dependencies = [
- "cosmwasm-std",
- "schemars",
- "serde",
 ]
 
 [[package]]
@@ -270,7 +259,7 @@ checksum = "d6a84c6c1c0acc3616398eba50783934bd6c964bad6974241eaee3460c8f5b26"
 dependencies = [
  "cosmwasm-schema",
  "cosmwasm-std",
- "cw2 0.16.0",
+ "cw2",
  "schemars",
  "semver",
  "serde",
@@ -291,25 +280,13 @@ dependencies = [
 
 [[package]]
 name = "cw2"
-version = "0.11.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c1d81d7c359d6c1fba3aa83dad7ec6f999e512571380ae62f81257c3db569743"
-dependencies = [
- "cosmwasm-std",
- "cw-storage-plus 0.11.1",
- "schemars",
- "serde",
-]
-
-[[package]]
-name = "cw2"
 version = "0.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "91398113b806f4d2a8d5f8d05684704a20ffd5968bf87e3473e1973710b884ad"
 dependencies = [
  "cosmwasm-schema",
  "cosmwasm-std",
- "cw-storage-plus 0.16.0",
+ "cw-storage-plus",
  "schemars",
  "serde",
 ]
@@ -327,22 +304,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "cw20-base"
-version = "0.11.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "62f6fc8c4cd451b418fa4f1ac2ea70595811fa9d8b4033617fe47953d7a93ceb"
-dependencies = [
- "cosmwasm-std",
- "cw-storage-plus 0.11.1",
- "cw-utils 0.11.1",
- "cw2 0.11.1",
- "cw20",
- "schemars",
- "serde",
- "thiserror",
-]
-
-[[package]]
 name = "cw20-reward"
 version = "0.11.1"
 dependencies = [
@@ -350,10 +311,10 @@ dependencies = [
  "cosmwasm-std",
  "cw-controllers",
  "cw-multi-test",
- "cw-storage-plus 0.16.0",
+ "cw-storage-plus",
+ "cw-utils 0.16.0",
  "cw0",
  "cw20",
- "cw20-base",
  "schemars",
  "serde",
  "thiserror",
