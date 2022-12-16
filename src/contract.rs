@@ -94,6 +94,36 @@ pub fn update_reward_index(
     Ok(claimed_rewards)
 }
 
+pub fn update_rewards(
+    deps: DepsMut,
+    env: Env,
+    holder: &mut Holder,
+) -> Result<Uint128, ContractError> {
+    let mut state = STATE.load(deps.storage)?;
+
+    // update reward index
+    update_reward_index(&mut state, deps, env)?;
+
+    let mut rewards_uint128 = Uint128::zero();
+    //index_diff = global_index - holder.index;
+    let index_diff: Decimal256 = state.global_index - holder.index;
+    //reward_amount = holder.balance * index_diff + holder.pending_rewards;
+    let reward_amount = Decimal256::from_ratio(holder.balance, Uint256::one())
+        .checked_mul(index_diff)?
+        .checked_add(holder.dec_rewards)?;
+
+    let decimals = get_decimals(reward_amount)?;
+
+    //floor(reward_amount)
+    rewards_uint128 = (reward_amount * Uint256::one())
+        .try_into()
+        .unwrap_or(Uint128::zero());
+    holder.dec_rewards = decimals;
+    holder.pending_rewards = rewards_uint128;
+    holder.index = state.global_index;
+    Ok(rewards_uint128)
+}
+
 pub fn execute_receive_reward(
     deps: DepsMut,
     env: Env,
@@ -105,22 +135,12 @@ pub fn execute_receive_reward(
     if holder.balance.is_zero() {
         return Err(ContractError::NoBond {});
     }
-    // update reward index
-    update_reward_index(&mut state, deps, env)?;
-
-    let mut rewards_uint128 = Uint128::zero();
-    //index_diff = global_index - holder.index;
-    let index_diff: Decimal256 = state.global_index - holder.index;
-    //reward_amount = holder.balance * index_diff + holder.pending_rewards;
-    let reward_amount = Decimal256::from_ratio(holder.balance, Uint256::one())
-        .checked_mul(index_diff)?
-        .checked_add(holder.pending_rewards)?;
-
-    let decimals = get_decimals(reward_amount)?;
-
-    //floor(reward_amount)
-    rewards_uint128 = (reward_amount * Uint256::one()).try_into()?;
-    holder.pending_rewards = decimals;
+    let rewards_uint128 = update_rewards(deps, env, &mut holder)?;
+    HOLDERS.save(
+        deps.storage,
+        &Addr::unchecked(info.sender.as_str()),
+        &holder,
+    )?;
 
     //send rewards to the holder
     let res = Response::new()
@@ -154,22 +174,26 @@ pub fn execute_bond(
     let addr = deps.api.addr_validate(&holder_addr.as_str())?;
     let mut state = STATE.load(deps.storage)?;
 
-    let mut holder = HOLDERS.may_load(deps.storage, &addr)?.unwrap_or(Holder {
-        balance: Uint128::zero(),
-        index: Decimal::zero(),
-        pending_rewards: Decimal::zero(),
-    });
+    let mut holder = HOLDERS.may_load(deps.storage, &addr)?;
+    match holder {
+        None => {
+            update_reward_index(&mut state, deps, _env)?;
+            let holder = Holder::new(amount, state.global_index, Decimal256::zero());
 
-    // get decimals
-    //in new bonding rewards=global_index*balance
-    let rewards = calculate_decimal_rewards(state.global_index, holder.index, holder.balance)?;
+            HOLDERS.save(deps.storage, &addr, &holder)?;
+        }
+        Some(holder) => {
+            update_reward_index(&mut state, deps, _env)?;
+            if holder.balance.is_zero() {
+                return Err(ContractError::NoBond {});
+            }
 
-    holder.index = state.global_index;
-    holder.pending_rewards = rewards.sub(holder.pending_rewards);
-    holder.balance = amount;
-    // save reward and index
-    HOLDERS.save(deps.storage, &addr, &holder)?;
+            update_rewards(deps, _env, &mut holder)?;
+            holder.balance += amount;
 
+            HOLDERS.save(deps.storage, &addr, &holder)?;
+        }
+    }
     state.total_balance += amount;
     STATE.save(deps.storage, &state)?;
 

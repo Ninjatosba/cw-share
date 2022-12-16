@@ -2,6 +2,7 @@ use crate::msg::HolderResponse;
 use cosmwasm_std::{
     Addr, Api, CanonicalAddr, Decimal, Decimal256, Deps, Order, StdResult, Uint128,
 };
+use cw20::Balance;
 use cw_controllers::Claims;
 use cw_storage_plus::{Bound, Item, Map};
 use schemars::JsonSchema;
@@ -21,7 +22,8 @@ pub const STATE: Item<State> = Item::new("state");
 pub struct Holder {
     pub balance: Uint128,
     pub index: Decimal256,
-    pub pending_rewards: Decimal256,
+    pub dec_rewards: Decimal256,
+    pub pending_rewards: Uint128,
 }
 
 // REWARDS (holder_addr, cw20_addr) -> Holder
@@ -63,5 +65,15 @@ fn calc_range_start(api: &dyn Api, start_after: Option<Addr>) -> StdResult<Optio
             Ok(Some(v))
         }
         None => Ok(None),
+    }
+}
+
+impl Holder {
+    pub fn new(balance: Uint128, index: Decimal256, pending_rewards: Decimal256) -> Self {
+        Holder {
+            balance,
+            index,
+            pending_rewards,
+        }
     }
 }
