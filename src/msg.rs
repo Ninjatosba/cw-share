@@ -47,16 +47,12 @@ pub enum ReceiveMsg {
 #[serde(rename_all = "snake_case")]
 pub enum QueryMsg {
     State {},
-    AccruedRewards {
-        address: String,
-    },
-    Holder {
-        address: String,
-    },
-    Holders {
-        start_after: Option<String>,
-        limit: Option<u32>,
-    },
+    AccruedRewards { address: String },
+    Holder { address: String },
+    // Holders {
+    //     start_after: Option<String>,
+    //     limit: Option<u32>,
+    // },
     // Claims {
     //     address: String,
     // },
@@ -78,6 +74,7 @@ pub struct AccruedRewardsResponse {
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct HolderResponse {
+    pub address: String,
     pub balance: Uint128,
     pub index: Decimal256,
     pub pending_rewards: Uint128,

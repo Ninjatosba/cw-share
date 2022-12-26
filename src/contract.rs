@@ -7,7 +7,7 @@ use crate::msg::{
     AccruedRewardsResponse, ExecuteMsg, HolderResponse, HoldersResponse, InstantiateMsg,
     MigrateMsg, QueryMsg, StateResponse,
 };
-use crate::state::{list_accrued_rewards, Holder, State, CLAIMS, HOLDERS, STATE};
+use crate::state::{Holder, State, CLAIMS, HOLDERS, STATE};
 use crate::ContractError;
 use cw_controllers::ClaimsResponse;
 use std::convert::TryInto;
@@ -42,7 +42,7 @@ pub fn execute(
 ) -> Result<Response, ContractError> {
     match msg {
         ExecuteMsg::UpdateRewardIndex {} => execute_update_reward_index(deps, env),
-        ExecuteMsg::UnbondStake { amount } => execute_unbound(deps, env, info, amount),
+        ExecuteMsg::UnbondStake { amount } => execute_withdraw(deps, env, info, amount),
         ExecuteMsg::ReceiveReward {} => execute_receive_reward(deps, env, info),
     }
 }
@@ -68,10 +68,11 @@ pub fn execute_update_reward_index(deps: DepsMut, env: Env) -> Result<Response, 
 
 pub fn update_reward_index(
     state: &mut State,
-    deps: DepsMut,
+    mut deps: DepsMut,
     env: Env,
 ) -> Result<Uint128, ContractError> {
     let current_balance: Uint128 = deps
+        .branch()
         .querier
         .query_balance(&env.contract.address, &state.reward_denom)?
         .amount;
@@ -92,14 +93,14 @@ pub fn update_reward_index(
 }
 
 pub fn update_rewards(
-    deps: DepsMut,
+    mut deps: DepsMut,
     env: Env,
     holder: &mut Holder,
 ) -> Result<Uint128, ContractError> {
     let mut state = STATE.load(deps.storage)?;
 
-    // update reward index
-    update_reward_index(&mut state, deps, env)?;
+    //update reward index
+    update_reward_index(&mut state, deps.branch(), env)?;
 
     let mut rewards_uint128 = Uint128::zero();
     //index_diff = global_index - holder.index;
@@ -122,7 +123,7 @@ pub fn update_rewards(
 }
 
 pub fn execute_receive_reward(
-    deps: DepsMut,
+    mut deps: DepsMut,
     env: Env,
     info: MessageInfo,
 ) -> Result<Response, ContractError> {
@@ -132,7 +133,8 @@ pub fn execute_receive_reward(
     if holder.balance.is_zero() {
         return Err(ContractError::NoBond {});
     }
-    let rewards_uint128 = update_rewards(deps, env, &mut holder)?;
+    let rewards_uint128 = update_rewards(deps.branch(), env, &mut holder)?;
+
     HOLDERS.save(
         deps.storage,
         &Addr::unchecked(info.sender.as_str()),
@@ -155,10 +157,9 @@ pub fn execute_receive_reward(
 }
 
 pub fn execute_bond(
-    deps: DepsMut,
+    mut deps: DepsMut,
     env: Env,
     info: MessageInfo,
-    holder_addr: String,
     amount: Uint128,
 ) -> Result<Response, ContractError> {
     if !info.funds.is_empty() {
@@ -168,13 +169,13 @@ pub fn execute_bond(
         return Err(ContractError::AmountRequired {});
     }
 
-    let addr = deps.api.addr_validate(&holder_addr.as_str())?;
+    let addr = info.sender;
     let mut state = STATE.load(deps.storage)?;
 
     let mut holder = HOLDERS.may_load(deps.storage, &addr)?;
     match holder {
         None => {
-            update_reward_index(&mut state, deps, env)?;
+            update_reward_index(&mut state, deps.branch(), env)?;
             let holder = Holder::new(
                 amount,
                 state.global_index,
@@ -184,13 +185,13 @@ pub fn execute_bond(
 
             HOLDERS.save(deps.storage, &addr, &holder)?;
         }
-        Some(holder) => {
-            update_reward_index(&mut state, deps, env)?;
+        Some(mut holder) => {
+            update_reward_index(&mut state, deps.branch(), env.clone())?;
             if holder.balance.is_zero() {
                 return Err(ContractError::NoBond {});
             }
 
-            update_rewards(deps, env, &mut holder)?;
+            update_rewards(deps.branch(), env.clone(), &mut holder)?;
             holder.balance += amount;
 
             HOLDERS.save(deps.storage, &addr, &holder)?;
@@ -201,14 +202,14 @@ pub fn execute_bond(
 
     let res = Response::new()
         .add_attribute("action", "bond_stake")
-        .add_attribute("holder_address", holder_addr)
+        .add_attribute("holder_address", addr)
         .add_attribute("amount", amount);
 
     Ok(res)
 }
 
-pub fn execute_unbound(
-    deps: DepsMut,
+pub fn execute_withdraw(
+    mut deps: DepsMut,
     env: Env,
     info: MessageInfo,
     amount: Uint128,
@@ -227,8 +228,8 @@ pub fn execute_unbound(
         return Err(ContractError::DecreaseAmountExceeds(holder.balance));
     }
 
-    update_rewards(deps, env, &mut holder);
-    update_reward_index(&mut state, deps, env);
+    update_rewards(deps.branch(), env.clone(), &mut holder);
+    update_reward_index(&mut state, deps.branch(), env.clone());
 
     holder.balance = (holder.balance.checked_sub(amount))?;
     state.total_staked = (state.total_staked.checked_sub(amount))?;
@@ -265,9 +266,9 @@ pub fn query(deps: DepsMut, env: Env, msg: QueryMsg) -> StdResult<Binary> {
             to_binary(&query_accrued_rewards(env, deps, address)?)
         }
         QueryMsg::Holder { address } => to_binary(&query_holder(env, deps, address)?),
-        QueryMsg::Holders { start_after, limit } => {
-            to_binary(&query_holders(deps, start_after, limit)?)
-        } // QueryMsg::Claims { address } => to_binary(&query_claims(deps, address)?),
+        // QueryMsg::Holders { start_after, limit } => {
+        //     to_binary(&query_holders(deps, start_after, limit)?)
+        // } // QueryMsg::Claims { address } => to_binary(&query_claims(deps, address)?),
     }
 }
 
@@ -304,6 +305,7 @@ pub fn query_holder(env: Env, deps: DepsMut, address: String) -> StdResult<Holde
     let mut state = STATE.load(deps.storage)?;
     update_rewards(deps, env, &mut holder);
     Ok(HolderResponse {
+        address: address,
         balance: holder.balance,
         index: holder.index,
         pending_rewards: holder.pending_rewards,
@@ -311,21 +313,21 @@ pub fn query_holder(env: Env, deps: DepsMut, address: String) -> StdResult<Holde
     })
 }
 
-pub fn query_holders(
-    deps: DepsMut,
-    start_after: Option<String>,
-    limit: Option<u32>,
-) -> StdResult<HoldersResponse> {
-    let start_after = if let Some(start_after) = start_after {
-        Some(deps.api.addr_validate(&start_after)?)
-    } else {
-        None
-    };
+// pub fn query_holders(
+//     deps: DepsMut,
+//     start_after: Option<String>,
+//     limit: Option<u32>,
+// ) -> StdResult<HoldersResponse> {
+//     let start_after = if let Some(start_after) = start_after {
+//         Some(deps.api.addr_validate(&start_after)?)
+//     } else {
+//         None
+//     };
 
-    let holders: Vec<HolderResponse> = list_accrued_rewards(deps, start_after, limit)?;
+//     let holders: Vec<HolderResponse> = list_accrued_rewards(deps, start_after, limit)?;
 
-    Ok(HoldersResponse { holders })
-}
+//     Ok(HoldersResponse { holders })
+// }
 
 // pub fn query_claims(deps: Deps, addr: String) -> StdResult<ClaimsResponse> {
 //     Ok(CLAIMS.query_claims(deps, &deps.api.addr_validate(addr.as_str())?)?)

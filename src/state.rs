@@ -34,29 +34,30 @@ pub const CLAIMS: Claims = Claims::new("claims");
 /// list_accrued_rewards settings for pagination
 const MAX_LIMIT: u32 = 30;
 const DEFAULT_LIMIT: u32 = 10;
-pub fn list_accrued_rewards(
-    deps: DepsMut,
-    start_after: Option<Addr>,
-    limit: Option<u32>,
-) -> StdResult<Vec<HolderResponse>> {
-    let limit = limit.unwrap_or(DEFAULT_LIMIT).min(MAX_LIMIT) as usize;
-    let start = calc_range_start(deps.api, start_after.map(Addr::unchecked))?.map(Bound::exclusive);
+// pub fn list_accrued_rewards(
+//     deps: DepsMut,
+//     start_after: Option<String>,
+//     limit: Option<u32>,
+// ) -> StdResult<Vec<HolderResponse>> {
+//     let limit = limit.unwrap_or(DEFAULT_LIMIT).min(MAX_LIMIT) as usize;
+//     let addr = maybe_addr(deps.api, start_after)?;
+//     let start = addr.as_ref().map(Bound::exclusive);
 
-    HOLDERS
-        .range(deps.storage, start, None, Order::Ascending)
-        .take(limit)
-        .map(|elem| {
-            let (addr, v) = elem?;
-            Ok(HolderResponse {
-                address: addr.to_string(),
-                balance: v.balance,
-                index: v.index,
-                pending_rewards: v.pending_rewards,
-                dec_rewards: v.dec_rewards,
-            })
-        })
-        .collect()
-}
+//     HOLDERS
+//         .range(deps.storage, start, None, Order::Ascending)
+//         .take(limit)
+//         .map(|elem| {
+//             let (addr, v) = elem?;
+//             Ok(HolderResponse {
+//                 address: addr.to_string(),
+//                 balance: v.balance,
+//                 index: v.index,
+//                 pending_rewards: v.pending_rewards,
+//                 dec_rewards: v.dec_rewards,
+//             })
+//         })
+//         .collect()
+// }
 
 fn calc_range_start(api: &dyn Api, start_after: Option<Addr>) -> StdResult<Option<Vec<u8>>> {
     match start_after {
