@@ -1,7 +1,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use cosmwasm_std::{Decimal, Uint128};
+use cosmwasm_std::{Decimal, Decimal256, Uint128};
 use cw20::Cw20ReceiveMsg;
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
@@ -28,10 +28,6 @@ pub enum ExecuteMsg {
     /// Withdraw rewards to pending rewards
     /// Set current reward index to global index
     UnbondStake { amount: Uint128 },
-
-    /// Unbound user staking balance
-    /// Withdraws released stake
-    WithdrawStake { cap: Option<Uint128> },
 
     /// This accepts a properly-encoded ReceiveMsg from a cw20 contract
     ReceiveReward {},
@@ -61,16 +57,17 @@ pub enum QueryMsg {
         start_after: Option<String>,
         limit: Option<u32>,
     },
-    Claims {
-        address: String,
-    },
+    // Claims {
+    //     address: String,
+    // },
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct StateResponse {
-    pub token_address: String,
-    pub global_index: Decimal,
-    pub total_balance: Uint128,
+    pub staked_token_denom: String,
+    pub reward_denom: String,
+    pub global_index: Decimal256,
+    pub total_staked: Uint128,
     pub prev_reward_balance: Uint128,
 }
 
@@ -81,10 +78,10 @@ pub struct AccruedRewardsResponse {
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct HolderResponse {
-    pub address: String,
     pub balance: Uint128,
-    pub index: Decimal,
-    pub pending_rewards: Decimal,
+    pub index: Decimal256,
+    pub pending_rewards: Uint128,
+    pub dec_rewards: Decimal256,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]

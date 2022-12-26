@@ -1,6 +1,6 @@
 use crate::msg::HolderResponse;
 use cosmwasm_std::{
-    Addr, Api, CanonicalAddr, Decimal, Decimal256, Deps, Order, StdResult, Uint128,
+    Addr, Api, CanonicalAddr, Decimal, Decimal256, Deps, DepsMut, Order, StdResult, Uint128,
 };
 use cw20::Balance;
 use cw_controllers::Claims;
@@ -13,7 +13,7 @@ pub struct State {
     pub staked_token_denom: String,
     pub reward_denom: String,
     pub global_index: Decimal256,
-    pub total_balance: Uint128,
+    pub total_staked: Uint128,
     pub prev_reward_balance: Uint128,
 }
 pub const STATE: Item<State> = Item::new("state");
@@ -35,7 +35,7 @@ pub const CLAIMS: Claims = Claims::new("claims");
 const MAX_LIMIT: u32 = 30;
 const DEFAULT_LIMIT: u32 = 10;
 pub fn list_accrued_rewards(
-    deps: Deps,
+    deps: DepsMut,
     start_after: Option<Addr>,
     limit: Option<u32>,
 ) -> StdResult<Vec<HolderResponse>> {
@@ -52,6 +52,7 @@ pub fn list_accrued_rewards(
                 balance: v.balance,
                 index: v.index,
                 pending_rewards: v.pending_rewards,
+                dec_rewards: v.dec_rewards,
             })
         })
         .collect()
@@ -69,11 +70,17 @@ fn calc_range_start(api: &dyn Api, start_after: Option<Addr>) -> StdResult<Optio
 }
 
 impl Holder {
-    pub fn new(balance: Uint128, index: Decimal256, pending_rewards: Decimal256) -> Self {
+    pub fn new(
+        balance: Uint128,
+        index: Decimal256,
+        pending_rewards: Uint128,
+        dec_rewards: Decimal256,
+    ) -> Self {
         Holder {
             balance,
             index,
             pending_rewards,
+            dec_rewards,
         }
     }
 }

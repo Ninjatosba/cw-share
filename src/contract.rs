@@ -1,6 +1,6 @@
 use cosmwasm_std::{
-    attr, entry_point, to_binary, Addr, BankMsg, Binary, Coin, CosmosMsg, Decimal, Decimal256,
-    Deps, DepsMut, Env, MessageInfo, Response, StdError, StdResult, Uint128, Uint256, WasmMsg,
+    entry_point, to_binary, Addr, BankMsg, Binary, Coin, CosmosMsg, Decimal, Decimal256, Deps,
+    DepsMut, Env, MessageInfo, Response, StdError, StdResult, Uint128, Uint256, WasmMsg,
 };
 
 use crate::msg::{
@@ -17,7 +17,7 @@ use std::str::FromStr;
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn instantiate(
     deps: DepsMut,
-    _env: Env,
+    env: Env,
     _info: MessageInfo,
     msg: InstantiateMsg,
 ) -> StdResult<Response> {
@@ -25,7 +25,7 @@ pub fn instantiate(
         staked_token_denom: msg.staked_token_denom,
         reward_denom: msg.reward_denom,
         global_index: Decimal256::zero(),
-        total_balance: Uint128::zero(),
+        total_staked: Uint128::zero(),
         prev_reward_balance: Uint128::zero(),
     };
     STATE.save(deps.storage, &state)?;
@@ -43,7 +43,6 @@ pub fn execute(
     match msg {
         ExecuteMsg::UpdateRewardIndex {} => execute_update_reward_index(deps, env),
         ExecuteMsg::UnbondStake { amount } => execute_unbound(deps, env, info, amount),
-        ExecuteMsg::WithdrawStake { cap } => execute_withdraw_stake(deps, env, info, cap),
         ExecuteMsg::ReceiveReward {} => execute_receive_reward(deps, env, info),
     }
 }
@@ -52,15 +51,13 @@ pub fn execute(
 pub fn execute_update_reward_index(deps: DepsMut, env: Env) -> Result<Response, ContractError> {
     let mut state = STATE.load(deps.storage)?;
 
-    // Zero staking balance check
-    if state.total_balance.is_zero() {
+    // Zero staking check
+    if state.total_staked.is_zero() {
         return Err(ContractError::NoBond {});
     }
     let claimed_rewards = update_reward_index(&mut state, deps, env)?;
 
     // For querying the balance of the contract itself, we can use the querier
-    // We should find a way to add other token denoms for trasuary
-    // For that we should store more than one state with state id
 
     let res = Response::new()
         .add_attribute("action", "update_reward_index")
@@ -88,7 +85,7 @@ pub fn update_reward_index(
     // global_index += claimed_rewards / total_balance;
     state.global_index = state
         .global_index
-        .add(Decimal256::from_ratio(claimed_rewards, state.total_balance));
+        .add(Decimal256::from_ratio(claimed_rewards, state.total_staked));
 
     STATE.save(deps.storage, &state)?;
     Ok(claimed_rewards)
@@ -159,7 +156,7 @@ pub fn execute_receive_reward(
 
 pub fn execute_bond(
     deps: DepsMut,
-    _env: Env,
+    env: Env,
     info: MessageInfo,
     holder_addr: String,
     amount: Uint128,
@@ -177,24 +174,29 @@ pub fn execute_bond(
     let mut holder = HOLDERS.may_load(deps.storage, &addr)?;
     match holder {
         None => {
-            update_reward_index(&mut state, deps, _env)?;
-            let holder = Holder::new(amount, state.global_index, Decimal256::zero());
+            update_reward_index(&mut state, deps, env)?;
+            let holder = Holder::new(
+                amount,
+                state.global_index,
+                Uint128::zero(),
+                Decimal256::zero(),
+            );
 
             HOLDERS.save(deps.storage, &addr, &holder)?;
         }
         Some(holder) => {
-            update_reward_index(&mut state, deps, _env)?;
+            update_reward_index(&mut state, deps, env)?;
             if holder.balance.is_zero() {
                 return Err(ContractError::NoBond {});
             }
 
-            update_rewards(deps, _env, &mut holder)?;
+            update_rewards(deps, env, &mut holder)?;
             holder.balance += amount;
 
             HOLDERS.save(deps.storage, &addr, &holder)?;
         }
     }
-    state.total_balance += amount;
+    state.total_staked += amount;
     STATE.save(deps.storage, &state)?;
 
     let res = Response::new()
@@ -207,7 +209,7 @@ pub fn execute_bond(
 
 pub fn execute_unbound(
     deps: DepsMut,
-    _env: Env,
+    env: Env,
     info: MessageInfo,
     amount: Uint128,
 ) -> Result<Response, ContractError> {
@@ -225,105 +227,92 @@ pub fn execute_unbound(
         return Err(ContractError::DecreaseAmountExceeds(holder.balance));
     }
 
-    let rewards = calculate_decimal_rewards(state.global_index, holder.index, holder.balance)?;
+    update_rewards(deps, env, &mut holder);
+    update_reward_index(&mut state, deps, env);
 
-    holder.index = state.global_index;
-    holder.pending_rewards = rewards.add(holder.pending_rewards);
     holder.balance = (holder.balance.checked_sub(amount))?;
-    state.total_balance = (state.total_balance.checked_sub(amount))?;
+    state.total_staked = (state.total_staked.checked_sub(amount))?;
 
     STATE.save(deps.storage, &state)?;
     HOLDERS.save(deps.storage, &info.sender, &holder)?;
+    //send rewards and withdraw amount to the holder
+    let res: Response = Response::new()
+        .add_message(CosmosMsg::Bank(BankMsg::Send {
+            to_address: info.sender.to_string(),
+            amount: vec![
+                Coin {
+                    denom: state.staked_token_denom.to_string(),
+                    amount: amount,
+                },
+                Coin {
+                    denom: state.reward_denom.to_string(),
+                    amount: holder.pending_rewards,
+                },
+            ],
+        }))
+        .add_attribute("action", "unbond_stake")
+        .add_attribute("holder_address", info.sender)
+        .add_attribute("amount", amount);
 
-    let attributes = vec![
-        attr("action", "unbound"),
-        attr("holder_address", info.sender),
-        attr("amount", amount),
-    ];
-
-    Ok(Response::new().add_attributes(attributes))
-}
-
-pub fn execute_withdraw_stake(
-    deps: DepsMut,
-    env: Env,
-    info: MessageInfo,
-    cap: Option<Uint128>,
-) -> Result<Response, ContractError> {
-    let state = STATE.load(deps.storage)?;
-
-    let amount = CLAIMS.claim_tokens(deps.storage, &info.sender, &env.block, cap)?;
-    if amount.is_zero() {
-        return Err(ContractError::WaitUnbonding {});
-    }
-
-    let cw20_transfer_msg = Cw20ExecuteMsg::Transfer {
-        recipient: info.sender.to_string(),
-        amount,
-    };
-    let msg = WasmMsg::Execute {
-        contract_addr: state.token_address,
-        msg: to_binary(&cw20_transfer_msg)?,
-        funds: vec![],
-    };
-
-    Ok(Response::new()
-        .add_message(msg)
-        .add_attribute("action", "withdraw_stake")
-        .add_attribute("holder_address", &info.sender)
-        .add_attribute("amount", amount))
+    Ok(res)
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
-pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
+pub fn query(deps: DepsMut, env: Env, msg: QueryMsg) -> StdResult<Binary> {
     match msg {
-        QueryMsg::State {} => to_binary(&query_state(deps, _env, msg)?),
-        QueryMsg::AccruedRewards { address } => to_binary(&query_accrued_rewards(deps, address)?),
-        QueryMsg::Holder { address } => to_binary(&query_holder(deps, address)?),
+        QueryMsg::State {} => to_binary(&query_state(deps, env, msg)?),
+        QueryMsg::AccruedRewards { address } => {
+            to_binary(&query_accrued_rewards(env, deps, address)?)
+        }
+        QueryMsg::Holder { address } => to_binary(&query_holder(env, deps, address)?),
         QueryMsg::Holders { start_after, limit } => {
             to_binary(&query_holders(deps, start_after, limit)?)
-        }
-        QueryMsg::Claims { address } => to_binary(&query_claims(deps, address)?),
+        } // QueryMsg::Claims { address } => to_binary(&query_claims(deps, address)?),
     }
 }
 
-pub fn query_state(deps: Deps, _env: Env, _msg: QueryMsg) -> StdResult<StateResponse> {
+pub fn query_state(deps: DepsMut, env: Env, _msg: QueryMsg) -> StdResult<StateResponse> {
     let state = STATE.load(deps.storage)?;
 
     Ok(StateResponse {
-        token_address: state.token_address,
+        staked_token_denom: state.staked_token_denom,
+        reward_denom: state.reward_denom,
+        total_staked: state.total_staked,
         global_index: state.global_index,
-        total_balance: state.total_balance,
         prev_reward_balance: state.prev_reward_balance,
     })
 }
 
-pub fn query_accrued_rewards(deps: Deps, address: String) -> StdResult<AccruedRewardsResponse> {
-    let state = STATE.load(deps.storage)?;
+pub fn query_accrued_rewards(
+    env: Env,
+    deps: DepsMut,
+    address: String,
+) -> StdResult<AccruedRewardsResponse> {
+    let addr = deps.api.addr_validate(&address.as_str())?;
+    let mut holder = HOLDERS.load(deps.storage, &addr)?;
+    let mut state = STATE.load(deps.storage)?;
+    update_rewards(deps, env, &mut holder);
 
-    let addr = deps.api.addr_validate(address.as_str())?;
-    let holder = HOLDERS.load(deps.storage, &addr)?;
-    let reward_with_decimals =
-        calculate_decimal_rewards(state.global_index, holder.index, holder.balance)?;
-    let all_reward_with_decimals = reward_with_decimals.add(holder.pending_rewards);
-
-    let rewards = all_reward_with_decimals * Uint128::new(1);
-
-    Ok(AccruedRewardsResponse { rewards })
+    Ok(AccruedRewardsResponse {
+        rewards: holder.pending_rewards,
+    })
 }
 
-pub fn query_holder(deps: Deps, address: String) -> StdResult<HolderResponse> {
-    let holder: Holder = HOLDERS.load(deps.storage, &deps.api.addr_validate(address.as_str())?)?;
+pub fn query_holder(env: Env, deps: DepsMut, address: String) -> StdResult<HolderResponse> {
+    let mut holder: Holder =
+        HOLDERS.load(deps.storage, &deps.api.addr_validate(address.as_str())?)?;
+    let mut state = STATE.load(deps.storage)?;
+    update_rewards(deps, env, &mut holder);
     Ok(HolderResponse {
-        address,
         balance: holder.balance,
         index: holder.index,
         pending_rewards: holder.pending_rewards,
+        dec_rewards: holder.dec_rewards,
     })
 }
 
 pub fn query_holders(
-    deps: Deps,
+    deps: DepsMut,
     start_after: Option<String>,
     limit: Option<u32>,
 ) -> StdResult<HoldersResponse> {
@@ -338,29 +327,29 @@ pub fn query_holders(
     Ok(HoldersResponse { holders })
 }
 
-pub fn query_claims(deps: Deps, addr: String) -> StdResult<ClaimsResponse> {
-    Ok(CLAIMS.query_claims(deps, &deps.api.addr_validate(addr.as_str())?)?)
-}
+// pub fn query_claims(deps: Deps, addr: String) -> StdResult<ClaimsResponse> {
+//     Ok(CLAIMS.query_claims(deps, &deps.api.addr_validate(addr.as_str())?)?)
+// }
 
 // calculate the reward based on the sender's index and the global index.
-pub fn calculate_decimal_rewards(
-    global_index: Decimal,
-    user_index: Decimal,
-    user_balance: Uint128,
-) -> StdResult<Decimal> {
-    let decimal_balance = Decimal::from_ratio(user_balance, Uint128::new(1));
+// pub fn calculate_decimal_rewards(
+//     global_index: Decimal,
+//     user_index: Decimal,
+//     user_balance: Uint128,
+// ) -> StdResult<Decimal> {
+//     let decimal_balance = Decimal::from_ratio(user_balance, Uint128::new(1));
 
-    Ok(global_index.sub(user_index).mul(decimal_balance))
-}
+//     Ok(global_index.sub(user_index).mul(decimal_balance))
+// }
 
 // calculate the reward with decimal
 pub fn get_decimals(value: Decimal256) -> StdResult<Decimal256> {
     let stringed: &str = &*value.to_string();
     let parts: &[&str] = &*stringed.split('.').collect::<Vec<&str>>();
     match parts.len() {
-        1 => Ok(Decimal::zero()),
+        1 => Ok(Decimal256::zero()),
         2 => {
-            let decimals = Decimal::from_str(&*("0.".to_owned() + parts[1]))?;
+            let decimals: Decimal256 = Decimal256::from_str(&*("0.".to_owned() + parts[1]))?;
             Ok(decimals)
         }
         _ => Err(StdError::generic_err("Unexpected number of dots")),
@@ -368,6 +357,6 @@ pub fn get_decimals(value: Decimal256) -> StdResult<Decimal256> {
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
-pub fn migrate(_deps: DepsMut, _env: Env, _msg: MigrateMsg) -> StdResult<Response> {
+pub fn migrate(_deps: DepsMut, env: Env, _msg: MigrateMsg) -> StdResult<Response> {
     Ok(Response::default())
 }
