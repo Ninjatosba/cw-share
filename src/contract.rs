@@ -2,6 +2,7 @@ use cosmwasm_std::{
     entry_point, to_binary, Addr, BankMsg, Binary, Coin, CosmosMsg, Decimal, Decimal256, Deps,
     DepsMut, Env, MessageInfo, Response, StdError, StdResult, Uint128, Uint256, WasmMsg,
 };
+use cw0::maybe_addr;
 
 use crate::msg::{
     AccruedRewardsResponse, ExecuteMsg, HolderResponse, HoldersResponse, InstantiateMsg,
@@ -13,11 +14,12 @@ use cw_controllers::ClaimsResponse;
 use std::convert::TryInto;
 use std::ops::{Add, Mul, Sub};
 use std::str::FromStr;
+use std::string;
 
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn instantiate(
     deps: DepsMut,
-    env: Env,
+    _env: Env,
     _info: MessageInfo,
     msg: InstantiateMsg,
 ) -> StdResult<Response> {
@@ -41,8 +43,12 @@ pub fn execute(
     msg: ExecuteMsg,
 ) -> Result<Response, ContractError> {
     match msg {
+        ExecuteMsg::BondStake {} => execute_bond(deps, env, info),
         ExecuteMsg::UpdateRewardIndex {} => execute_update_reward_index(deps, env),
-        ExecuteMsg::UnbondStake { amount } => execute_withdraw(deps, env, info, amount),
+        ExecuteMsg::UpdateHoldersreward { address } => {
+            execute_update_holders_rewards(deps, env, info, address)
+        }
+        ExecuteMsg::WithdrawStake { amount } => execute_withdraw(deps, env, info, amount),
         ExecuteMsg::ReceiveReward {} => execute_receive_reward(deps, env, info),
     }
 }
@@ -91,8 +97,32 @@ pub fn update_reward_index(
     STATE.save(deps.storage, &state)?;
     Ok(claimed_rewards)
 }
+//execute update rewards yazilacak
+pub fn execute_update_holders_rewards(
+    mut deps: DepsMut,
+    env: Env,
+    info: MessageInfo,
+    address: Option<String>,
+) -> Result<Response, ContractError> {
+    let mut state = STATE.load(deps.storage)?;
 
-pub fn update_rewards(
+    // Zero staking check
+    if state.total_staked.is_zero() {
+        return Err(ContractError::NoBond {});
+    }
+    //validate address
+    let addr = maybe_addr(deps.api, address)?.unwrap_or(info.sender);
+    let mut holder = HOLDERS.load(deps.storage, &Addr::unchecked(addr))?;
+
+    let res = Response::new()
+        .add_attribute("action", "update_reward_index")
+        .add_attribute("pending_rewards", holder.pending_rewards)
+        .add_attribute("new_index", state.global_index.to_string())
+        .add_attribute("holders index", holder.index.to_string());
+    Ok(res)
+}
+
+pub fn update_holders_rewards(
     mut deps: DepsMut,
     env: Env,
     holder: &mut Holder,
@@ -133,7 +163,7 @@ pub fn execute_receive_reward(
     if holder.balance.is_zero() {
         return Err(ContractError::NoBond {});
     }
-    let rewards_uint128 = update_rewards(deps.branch(), env, &mut holder)?;
+    let rewards_uint128 = update_holders_rewards(deps.branch(), env, &mut holder)?;
 
     HOLDERS.save(
         deps.storage,
@@ -160,19 +190,23 @@ pub fn execute_bond(
     mut deps: DepsMut,
     env: Env,
     info: MessageInfo,
-    amount: Uint128,
 ) -> Result<Response, ContractError> {
-    if !info.funds.is_empty() {
-        return Err(ContractError::DoNotSendFunds {});
-    }
-    if amount.is_zero() {
-        return Err(ContractError::AmountRequired {});
-    }
-
-    let addr = info.sender;
     let mut state = STATE.load(deps.storage)?;
 
+    let addr = info.sender;
+    let amount = info
+        .funds
+        .iter()
+        .find(|coin| coin.denom == state.staked_token_denom)
+        .map(|coin| coin.amount)
+        .unwrap_or(Uint128::zero());
+
+    if amount.is_zero() {
+        return Err(ContractError::NoFund {});
+    }
+
     let mut holder = HOLDERS.may_load(deps.storage, &addr)?;
+
     match holder {
         None => {
             update_reward_index(&mut state, deps.branch(), env)?;
@@ -191,7 +225,7 @@ pub fn execute_bond(
                 return Err(ContractError::NoBond {});
             }
 
-            update_rewards(deps.branch(), env.clone(), &mut holder)?;
+            update_holders_rewards(deps.branch(), env.clone(), &mut holder)?;
             holder.balance += amount;
 
             HOLDERS.save(deps.storage, &addr, &holder)?;
@@ -212,30 +246,25 @@ pub fn execute_withdraw(
     mut deps: DepsMut,
     env: Env,
     info: MessageInfo,
-    amount: Uint128,
+    amount: Option<Uint128>,
 ) -> Result<Response, ContractError> {
     let mut state = STATE.load(deps.storage)?;
 
     if !info.funds.is_empty() {
         return Err(ContractError::DoNotSendFunds {});
     }
-    if amount.is_zero() {
-        return Err(ContractError::AmountRequired {});
-    }
+    //amount to optional
 
     let mut holder = HOLDERS.load(deps.storage, &info.sender)?;
-    if holder.balance < amount {
+    let withdraw_amount = amount.unwrap_or(holder.balance);
+
+    if holder.balance < withdraw_amount {
         return Err(ContractError::DecreaseAmountExceeds(holder.balance));
     }
 
-    update_rewards(deps.branch(), env.clone(), &mut holder);
+    update_holders_rewards(deps.branch(), env.clone(), &mut holder);
     update_reward_index(&mut state, deps.branch(), env.clone());
 
-    holder.balance = (holder.balance.checked_sub(amount))?;
-    state.total_staked = (state.total_staked.checked_sub(amount))?;
-
-    STATE.save(deps.storage, &state)?;
-    HOLDERS.save(deps.storage, &info.sender, &holder)?;
     //send rewards and withdraw amount to the holder
     let res: Response = Response::new()
         .add_message(CosmosMsg::Bank(BankMsg::Send {
@@ -243,7 +272,7 @@ pub fn execute_withdraw(
             amount: vec![
                 Coin {
                     denom: state.staked_token_denom.to_string(),
-                    amount: amount,
+                    amount: withdraw_amount,
                 },
                 Coin {
                     denom: state.reward_denom.to_string(),
@@ -252,9 +281,13 @@ pub fn execute_withdraw(
             ],
         }))
         .add_attribute("action", "unbond_stake")
-        .add_attribute("holder_address", info.sender)
-        .add_attribute("amount", amount);
+        .add_attribute("holder_address", info.sender.clone())
+        .add_attribute("amount", withdraw_amount);
 
+    holder.balance = (holder.balance.checked_sub(withdraw_amount))?;
+    state.total_staked = (state.total_staked.checked_sub(withdraw_amount))?;
+    STATE.save(deps.storage, &state)?;
+    HOLDERS.save(deps.storage, &info.sender, &holder)?;
     Ok(res)
 }
 
@@ -290,9 +323,8 @@ pub fn query_accrued_rewards(
     address: String,
 ) -> StdResult<AccruedRewardsResponse> {
     let addr = deps.api.addr_validate(&address.as_str())?;
-    let mut holder = HOLDERS.load(deps.storage, &addr)?;
-    let mut state = STATE.load(deps.storage)?;
-    update_rewards(deps, env, &mut holder);
+    let holder = HOLDERS.load(deps.storage, &addr)?;
+    let state = STATE.load(deps.storage)?;
 
     Ok(AccruedRewardsResponse {
         rewards: holder.pending_rewards,
@@ -303,7 +335,6 @@ pub fn query_holder(env: Env, deps: DepsMut, address: String) -> StdResult<Holde
     let mut holder: Holder =
         HOLDERS.load(deps.storage, &deps.api.addr_validate(address.as_str())?)?;
     let mut state = STATE.load(deps.storage)?;
-    update_rewards(deps, env, &mut holder);
     Ok(HolderResponse {
         address: address,
         balance: holder.balance,

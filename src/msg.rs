@@ -2,7 +2,6 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use cosmwasm_std::{Decimal, Decimal256, Uint128};
-use cw20::Cw20ReceiveMsg;
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct InstantiateMsg {
@@ -20,14 +19,19 @@ pub enum ExecuteMsg {
     /// Update the reward index
     UpdateRewardIndex {},
 
+    UpdateHoldersreward {
+        address: Option<String>,
+    },
     ////////////////////
     /// Staking operations
     ///////////////////
-
+    BondStake {},
     /// Unbound user staking balance
     /// Withdraw rewards to pending rewards
     /// Set current reward index to global index
-    UnbondStake { amount: Uint128 },
+    WithdrawStake {
+        amount: Option<Uint128>,
+    },
 
     /// This accepts a properly-encoded ReceiveMsg from a cw20 contract
     ReceiveReward {},

@@ -29,4 +29,7 @@ pub enum ContractError {
 
     #[error("No bond")]
     NoBond {},
+
+    #[error("Please send right denom and funds")]
+    NoFund {},
 }
