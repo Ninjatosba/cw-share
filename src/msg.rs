@@ -1,7 +1,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use cosmwasm_std::{Decimal, Decimal256, Uint128};
+use cosmwasm_std::{Addr, Decimal, Decimal256, Uint128};
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct InstantiateMsg {
@@ -35,6 +35,13 @@ pub enum ExecuteMsg {
 
     /// This accepts a properly-encoded ReceiveMsg from a cw20 contract
     ReceiveReward {},
+
+    //Update config
+    UpdateConfig {
+        staked_token_denom: Option<String>,
+        reward_denom: Option<String>,
+        admin: Option<String>,
+    },
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]

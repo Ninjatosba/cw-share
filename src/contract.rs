@@ -8,27 +8,32 @@ use crate::msg::{
     AccruedRewardsResponse, ExecuteMsg, HolderResponse, InstantiateMsg, MigrateMsg, QueryMsg,
     StateResponse,
 };
-use crate::state::{Holder, State, HOLDERS, STATE};
+use crate::state::{Config, Holder, State, CONFIG, HOLDERS, STATE};
 use crate::ContractError;
 
 use std::convert::TryInto;
 use std::ops::Add;
 use std::str::FromStr;
+use std::sync::Arc;
 
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn instantiate(
     deps: DepsMut,
     _env: Env,
-    _info: MessageInfo,
+    info: MessageInfo,
     msg: InstantiateMsg,
 ) -> StdResult<Response> {
-    let state = State {
+    let config: Config = Config {
         staked_token_denom: msg.staked_token_denom,
         reward_denom: msg.reward_denom,
+        admin: info.sender.clone(),
+    };
+    let state = State {
         global_index: Decimal256::zero(),
         total_staked: Uint128::zero(),
         prev_reward_balance: Uint128::zero(),
     };
+    CONFIG.save(deps.storage, &config)?;
     STATE.save(deps.storage, &state)?;
 
     Ok(Response::default())
@@ -49,18 +54,25 @@ pub fn execute(
         }
         ExecuteMsg::WithdrawStake { amount } => execute_withdraw(deps, env, info, amount),
         ExecuteMsg::ReceiveReward {} => execute_receive_reward(deps, env, info),
+        ExecuteMsg::UpdateConfig {
+            staked_token_denom,
+            reward_denom,
+            admin,
+        } => execute_update_config(deps, env, info, staked_token_denom, reward_denom, admin),
     }
 }
 
 /// Increase global_index according to claimed rewards amount
 pub fn execute_update_reward_index(deps: DepsMut, env: Env) -> Result<Response, ContractError> {
     let mut state = STATE.load(deps.storage)?;
+    let mut config = CONFIG.load(deps.storage)?;
 
     // Zero staking check
     if state.total_staked.is_zero() {
         return Err(ContractError::NoBond {});
     }
-    let claimed_rewards = update_reward_index(&mut state, deps, env)?;
+
+    let claimed_rewards = update_reward_index(&mut state, config, deps, env)?;
 
     // For querying the balance of the contract itself, we can use the querier
 
@@ -73,13 +85,14 @@ pub fn execute_update_reward_index(deps: DepsMut, env: Env) -> Result<Response, 
 
 pub fn update_reward_index(
     state: &mut State,
+    config: Config,
     mut deps: DepsMut,
     env: Env,
 ) -> Result<Uint128, ContractError> {
     let current_balance: Uint128 = deps
         .branch()
         .querier
-        .query_balance(&env.contract.address, &state.reward_denom)?
+        .query_balance(&env.contract.address, &config.reward_denom)?
         .amount;
     let previous_balance = state.prev_reward_balance;
     println!("current_balance: {}", current_balance);
@@ -99,7 +112,7 @@ pub fn update_reward_index(
     STATE.save(deps.storage, &state)?;
     Ok(claimed_rewards)
 }
-//execute update rewards yazilacak
+
 pub fn execute_update_holders_rewards(
     mut deps: DepsMut,
     env: Env,
@@ -132,9 +145,10 @@ pub fn update_holders_rewards(
     holder: &mut Holder,
 ) -> Result<Uint128, ContractError> {
     let mut state = STATE.load(deps.storage)?;
+    let config = CONFIG.load(deps.storage)?;
 
     //update reward index
-    update_reward_index(&mut state, deps.branch(), env)?;
+    update_reward_index(&mut state, config, deps.branch(), env)?;
 
     let rewards_uint128;
     //index_diff = global_index - holder.index;
@@ -162,6 +176,7 @@ pub fn execute_receive_reward(
     info: MessageInfo,
 ) -> Result<Response, ContractError> {
     let state = STATE.load(deps.storage)?;
+    let config = CONFIG.load(deps.storage)?;
 
     let mut holder = HOLDERS.load(deps.storage, &Addr::unchecked(info.sender.as_str()))?;
     if holder.balance.is_zero() {
@@ -180,7 +195,7 @@ pub fn execute_receive_reward(
     let send_msg = CosmosMsg::Bank(BankMsg::Send {
         to_address: info.sender.to_string(),
         amount: vec![Coin {
-            denom: state.reward_denom.to_string(),
+            denom: config.reward_denom.to_string(),
             amount: rewards_uint128,
         }],
     });
@@ -203,12 +218,13 @@ pub fn execute_bond(
     info: MessageInfo,
 ) -> Result<Response, ContractError> {
     let mut state = STATE.load(deps.storage)?;
+    let config = CONFIG.load(deps.storage)?;
 
     let addr = info.sender;
     let amount = info
         .funds
         .iter()
-        .find(|coin| coin.denom == state.staked_token_denom)
+        .find(|coin| coin.denom == config.staked_token_denom)
         .map(|coin| coin.amount)
         .unwrap_or(Uint128::zero());
 
@@ -220,7 +236,7 @@ pub fn execute_bond(
 
     match holder {
         None => {
-            update_reward_index(&mut state, deps.branch(), env)?;
+            update_reward_index(&mut state, config, deps.branch(), env)?;
             let holder = Holder::new(
                 amount,
                 state.global_index,
@@ -231,7 +247,7 @@ pub fn execute_bond(
             HOLDERS.save(deps.storage, &addr, &holder)?;
         }
         Some(mut holder) => {
-            update_reward_index(&mut state, deps.branch(), env.clone())?;
+            update_reward_index(&mut state, config, deps.branch(), env.clone())?;
             if holder.balance.is_zero() {
                 return Err(ContractError::NoBond {});
             }
@@ -260,11 +276,10 @@ pub fn execute_withdraw(
     amount: Option<Uint128>,
 ) -> Result<Response, ContractError> {
     let mut state = STATE.load(deps.storage)?;
-
+    let config = CONFIG.load(deps.storage)?;
     if !info.funds.is_empty() {
         return Err(ContractError::DoNotSendFunds {});
     }
-    //amount to optional
 
     let mut holder = HOLDERS.load(deps.storage, &info.sender)?;
     let withdraw_amount = amount.unwrap_or(holder.balance);
@@ -274,7 +289,7 @@ pub fn execute_withdraw(
     }
 
     update_holders_rewards(deps.branch(), env.clone(), &mut holder)?;
-    update_reward_index(&mut state, deps.branch(), env.clone())?;
+    update_reward_index(&mut state, config.clone(), deps.branch(), env.clone())?;
 
     //send rewards and withdraw amount to the holder
     let res: Response = Response::new()
@@ -282,11 +297,11 @@ pub fn execute_withdraw(
             to_address: info.sender.to_string(),
             amount: vec![
                 Coin {
-                    denom: state.reward_denom.to_string(),
+                    denom: config.reward_denom.to_string(),
                     amount: holder.pending_rewards,
                 },
                 Coin {
-                    denom: state.staked_token_denom.to_string(),
+                    denom: config.staked_token_denom.to_string(),
                     amount: withdraw_amount,
                 },
             ],
@@ -299,6 +314,44 @@ pub fn execute_withdraw(
     state.total_staked = (state.total_staked.checked_sub(withdraw_amount))?;
     STATE.save(deps.storage, &state)?;
     HOLDERS.save(deps.storage, &info.sender, &holder)?;
+    Ok(res)
+}
+
+//update config
+pub fn execute_update_config(
+    deps: DepsMut,
+    _env: Env,
+    info: MessageInfo,
+    staked_token_denom: Option<String>,
+    reward_denom: Option<String>,
+    admin: Option<String>,
+) -> Result<Response, ContractError> {
+    let old_config: Config = CONFIG.load(deps.storage)?;
+
+    //check if admin is an valid address and set admin
+    let admin = match admin {
+        Some(admin) => deps.api.addr_validate(&admin)?,
+        None => old_config.clone().admin,
+    };
+
+    if info.sender != old_config.clone().admin {
+        return Err(ContractError::Unauthorized {});
+    };
+
+    let config = Config {
+        staked_token_denom: staked_token_denom.unwrap_or(old_config.staked_token_denom),
+        reward_denom: reward_denom.unwrap_or(old_config.reward_denom),
+        admin,
+    };
+
+    CONFIG.save(deps.storage, &config)?;
+
+    let res = Response::new()
+        .add_attribute("action", "update_config")
+        .add_attribute("staked_token_denom", config.staked_token_denom)
+        .add_attribute("reward_denom", config.reward_denom)
+        .add_attribute("admin", config.admin);
+
     Ok(res)
 }
 
@@ -318,10 +371,11 @@ pub fn query(deps: DepsMut, env: Env, msg: QueryMsg) -> StdResult<Binary> {
 
 pub fn query_state(deps: DepsMut, _env: Env, _msg: QueryMsg) -> StdResult<StateResponse> {
     let state = STATE.load(deps.storage)?;
+    let config = CONFIG.load(deps.storage)?;
 
     Ok(StateResponse {
-        staked_token_denom: state.staked_token_denom,
-        reward_denom: state.reward_denom,
+        staked_token_denom: config.staked_token_denom,
+        reward_denom: config.reward_denom,
         total_staked: state.total_staked,
         global_index: state.global_index,
         prev_reward_balance: state.prev_reward_balance,

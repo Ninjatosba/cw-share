@@ -8,22 +8,10 @@ mod tests {
         coin, from_binary, to_binary, Addr, BankMsg, BankQuery, Coin, CosmosMsg, Decimal,
         Decimal256, Empty, MessageInfo, SubMsg, Uint128, Uint256, WasmMsg,
     };
-    use schemars::_private::NoSerialize;
 
-    use crate::contract::{execute, execute_bond, get_decimals, instantiate, query};
-    use crate::msg::{
-        ExecuteMsg, HolderResponse, HoldersResponse, InstantiateMsg, QueryMsg, ReceiveMsg,
-        StateResponse,
-    };
-
-    use cw20::{Cw20ExecuteMsg, Cw20ReceiveMsg};
-
-    use crate::state::{Holder, State, HOLDERS, STATE};
+    use crate::contract::{execute, instantiate, query};
+    use crate::msg::{ExecuteMsg, HolderResponse, InstantiateMsg, QueryMsg, StateResponse};
     use crate::ContractError;
-    use cw_multi_test::{App, Contract, ContractWrapper};
-    use std::borrow::BorrowMut;
-    use std::ops::{Mul, Sub};
-    use std::str::FromStr;
 
     // fn mock_app() -> App {
     //     App::default()
@@ -216,7 +204,7 @@ mod tests {
             Decimal256::from_ratio(Uint128::new(500), Uint128::new(300))
         );
     }
-
+    //test recieve rewards
     #[test]
     pub fn test_recieve_rewards() {
         let mut deps = mock_dependencies_with_balance(&[]);
@@ -404,8 +392,6 @@ mod tests {
 
         assert_eq!(holder_response.pending_rewards, Uint128::new(66));
     }
-
-    //test execute update holders rewards
 
     //test withdraw
     #[test]

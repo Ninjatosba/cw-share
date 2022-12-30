@@ -32,4 +32,7 @@ pub enum ContractError {
 
     #[error("Please send right denom and funds")]
     NoFund {},
+
+    #[error("Address validation failed")]
+    InvalidAddress {},
 }

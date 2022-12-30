@@ -10,13 +10,20 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct State {
-    pub staked_token_denom: String,
-    pub reward_denom: String,
     pub global_index: Decimal256,
     pub total_staked: Uint128,
     pub prev_reward_balance: Uint128,
 }
 pub const STATE: Item<State> = Item::new("state");
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+pub struct Config {
+    pub staked_token_denom: String,
+    pub reward_denom: String,
+    pub admin: Addr,
+}
+
+pub const CONFIG: Item<Config> = Item::new("config");
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct Holder {
