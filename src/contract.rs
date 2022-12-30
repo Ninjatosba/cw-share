@@ -1,20 +1,19 @@
 use cosmwasm_std::{
-    entry_point, to_binary, Addr, BankMsg, Binary, Coin, CosmosMsg, Decimal, Decimal256, Deps,
-    DepsMut, Env, MessageInfo, Response, StdError, StdResult, Uint128, Uint256, WasmMsg,
+    entry_point, to_binary, Addr, BankMsg, Binary, Coin, CosmosMsg, Decimal256, DepsMut, Env,
+    MessageInfo, Response, StdError, StdResult, Uint128, Uint256,
 };
 use cw0::maybe_addr;
 
 use crate::msg::{
-    AccruedRewardsResponse, ExecuteMsg, HolderResponse, HoldersResponse, InstantiateMsg,
-    MigrateMsg, QueryMsg, StateResponse,
+    AccruedRewardsResponse, ExecuteMsg, HolderResponse, InstantiateMsg, MigrateMsg, QueryMsg,
+    StateResponse,
 };
-use crate::state::{Holder, State, CLAIMS, HOLDERS, STATE};
+use crate::state::{Holder, State, HOLDERS, STATE};
 use crate::ContractError;
-use cw_controllers::ClaimsResponse;
+
 use std::convert::TryInto;
-use std::ops::{Add, Mul, Sub};
+use std::ops::Add;
 use std::str::FromStr;
-use std::string;
 
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn instantiate(
@@ -107,7 +106,7 @@ pub fn execute_update_holders_rewards(
     info: MessageInfo,
     address: Option<String>,
 ) -> Result<Response, ContractError> {
-    let mut state = STATE.load(deps.storage)?;
+    let state = STATE.load(deps.storage)?;
 
     // Zero staking check
     if state.total_staked.is_zero() {
@@ -137,7 +136,7 @@ pub fn update_holders_rewards(
     //update reward index
     update_reward_index(&mut state, deps.branch(), env)?;
 
-    let mut rewards_uint128 = Uint128::zero();
+    let rewards_uint128;
     //index_diff = global_index - holder.index;
     let index_diff: Decimal256 = state.global_index - holder.index;
     //reward_amount = holder.balance * index_diff + holder.pending_rewards;
@@ -186,7 +185,7 @@ pub fn execute_receive_reward(
         }],
     });
 
-    if (rewards_uint128.is_zero()) {
+    if rewards_uint128.is_zero() {
         return Err(ContractError::NoRewards {});
     }
 
@@ -217,7 +216,7 @@ pub fn execute_bond(
         return Err(ContractError::NoFund {});
     }
 
-    let mut holder = HOLDERS.may_load(deps.storage, &addr)?;
+    let holder = HOLDERS.may_load(deps.storage, &addr)?;
 
     match holder {
         None => {
@@ -274,8 +273,8 @@ pub fn execute_withdraw(
         return Err(ContractError::DecreaseAmountExceeds(holder.balance));
     }
 
-    update_holders_rewards(deps.branch(), env.clone(), &mut holder);
-    update_reward_index(&mut state, deps.branch(), env.clone());
+    update_holders_rewards(deps.branch(), env.clone(), &mut holder)?;
+    update_reward_index(&mut state, deps.branch(), env.clone())?;
 
     //send rewards and withdraw amount to the holder
     let res: Response = Response::new()
@@ -317,7 +316,7 @@ pub fn query(deps: DepsMut, env: Env, msg: QueryMsg) -> StdResult<Binary> {
     }
 }
 
-pub fn query_state(deps: DepsMut, env: Env, _msg: QueryMsg) -> StdResult<StateResponse> {
+pub fn query_state(deps: DepsMut, _env: Env, _msg: QueryMsg) -> StdResult<StateResponse> {
     let state = STATE.load(deps.storage)?;
 
     Ok(StateResponse {
@@ -330,23 +329,22 @@ pub fn query_state(deps: DepsMut, env: Env, _msg: QueryMsg) -> StdResult<StateRe
 }
 
 pub fn query_accrued_rewards(
-    env: Env,
+    _env: Env,
     deps: DepsMut,
     address: String,
 ) -> StdResult<AccruedRewardsResponse> {
     let addr = deps.api.addr_validate(&address.as_str())?;
     let holder = HOLDERS.load(deps.storage, &addr)?;
-    let state = STATE.load(deps.storage)?;
+    let _state = STATE.load(deps.storage)?;
 
     Ok(AccruedRewardsResponse {
         rewards: holder.pending_rewards,
     })
 }
 
-pub fn query_holder(env: Env, deps: DepsMut, address: String) -> StdResult<HolderResponse> {
-    let mut holder: Holder =
-        HOLDERS.load(deps.storage, &deps.api.addr_validate(address.as_str())?)?;
-    let mut state = STATE.load(deps.storage)?;
+pub fn query_holder(_env: Env, deps: DepsMut, address: String) -> StdResult<HolderResponse> {
+    let holder: Holder = HOLDERS.load(deps.storage, &deps.api.addr_validate(address.as_str())?)?;
+    let _state = STATE.load(deps.storage)?;
     Ok(HolderResponse {
         address: address,
         balance: holder.balance,
@@ -355,37 +353,6 @@ pub fn query_holder(env: Env, deps: DepsMut, address: String) -> StdResult<Holde
         dec_rewards: holder.dec_rewards,
     })
 }
-
-// pub fn query_holders(
-//     deps: DepsMut,
-//     start_after: Option<String>,
-//     limit: Option<u32>,
-// ) -> StdResult<HoldersResponse> {
-//     let start_after = if let Some(start_after) = start_after {
-//         Some(deps.api.addr_validate(&start_after)?)
-//     } else {
-//         None
-//     };
-
-//     let holders: Vec<HolderResponse> = list_accrued_rewards(deps, start_after, limit)?;
-
-//     Ok(HoldersResponse { holders })
-// }
-
-// pub fn query_claims(deps: Deps, addr: String) -> StdResult<ClaimsResponse> {
-//     Ok(CLAIMS.query_claims(deps, &deps.api.addr_validate(addr.as_str())?)?)
-// }
-
-// calculate the reward based on the sender's index and the global index.
-// pub fn calculate_decimal_rewards(
-//     global_index: Decimal,
-//     user_index: Decimal,
-//     user_balance: Uint128,
-// ) -> StdResult<Decimal> {
-//     let decimal_balance = Decimal::from_ratio(user_balance, Uint128::new(1));
-
-//     Ok(global_index.sub(user_index).mul(decimal_balance))
-// }
 
 // calculate the reward with decimal
 pub fn get_decimals(value: Decimal256) -> StdResult<Decimal256> {
@@ -402,6 +369,6 @@ pub fn get_decimals(value: Decimal256) -> StdResult<Decimal256> {
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
-pub fn migrate(_deps: DepsMut, env: Env, _msg: MigrateMsg) -> StdResult<Response> {
+pub fn migrate(_deps: DepsMut, _env: Env, _msg: MigrateMsg) -> StdResult<Response> {
     Ok(Response::default())
 }

@@ -394,7 +394,6 @@ mod tests {
         let msg = ExecuteMsg::UpdateHoldersreward { address: None };
         let _res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
 
-
         //check second holders rewards
         let res = query(
             deps.as_mut(),
