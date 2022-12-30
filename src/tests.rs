@@ -1,12 +1,14 @@
 #[cfg(test)]
 mod tests {
     use cosmwasm_std::testing::{
-        mock_dependencies, mock_dependencies_with_balances, mock_env, mock_info,
+        mock_dependencies, mock_dependencies_with_balance, mock_dependencies_with_balances,
+        mock_env, mock_info,
     };
     use cosmwasm_std::{
-        coin, from_binary, to_binary, Addr, BankMsg, BankQuery, Coin, Decimal, Decimal256, Empty,
-        MessageInfo, SubMsg, Uint128, WasmMsg,
+        coin, from_binary, to_binary, Addr, BankMsg, BankQuery, Coin, CosmosMsg, Decimal,
+        Decimal256, Empty, MessageInfo, SubMsg, Uint128, Uint256, WasmMsg,
     };
+    use schemars::_private::NoSerialize;
 
     use crate::contract::{execute, execute_bond, get_decimals, instantiate, query};
     use crate::msg::{
@@ -102,12 +104,227 @@ mod tests {
         let msg = ExecuteMsg::BondStake {};
         let res = execute(deps.as_mut(), env.clone(), info.clone(), msg).unwrap_err();
         assert_eq!(res, ContractError::NoFund {});
+        //first bond
+        let info = mock_info(
+            "creator1",
+            &vec![Coin {
+                denom: "staked".to_string(),
+                amount: Uint128::new(100),
+            }],
+        );
+        let msg = ExecuteMsg::BondStake {};
+        let _res = execute(deps.as_mut(), env.clone(), info.clone(), msg).unwrap();
+
+        //query holder
+        let res = query(
+            deps.as_mut(),
+            env.clone(),
+            QueryMsg::Holder {
+                address: "creator1".to_string(),
+            },
+        )
+        .unwrap();
+        let holder_response: HolderResponse = from_binary(&res).unwrap();
+        assert_eq!(
+            holder_response,
+            HolderResponse {
+                address: "creator1".to_string(),
+                balance: Uint128::new(100),
+                index: Decimal256::zero(),
+                pending_rewards: Uint128::zero(),
+                dec_rewards: Decimal256::zero(),
+            }
+        );
     }
 
     //test execute update reward index
     #[test]
     pub fn test_update_reward_index() {
-        let mut deps = mock_dependencies();
+        let mut deps = mock_dependencies_with_balance(&[]);
+        let init_msg = default_init();
+        let env = mock_env();
+        instantiate(
+            deps.as_mut(),
+            env.clone(),
+            mock_info("creator1", &[]),
+            init_msg,
+        )
+        .unwrap();
+
+        //first bond
+        let info = mock_info(
+            "creator1",
+            &vec![Coin {
+                denom: "staked".to_string(),
+                amount: Uint128::new(100),
+            }],
+        );
+        let msg = ExecuteMsg::BondStake {};
+        let _res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
+        //update balance
+        deps.querier.update_balance(
+            env.contract.address.as_str(),
+            vec![Coin {
+                denom: "rewards".to_string(),
+                amount: Uint128::new(100),
+            }],
+        );
+
+        //no index update before update reward index
+        let res = query(deps.as_mut(), env.clone(), QueryMsg::State {}).unwrap();
+        let config_response: StateResponse = from_binary(&res).unwrap();
+        assert_eq!(config_response.global_index, Decimal256::zero(),);
+
+        //update reward index
+        let msg = ExecuteMsg::UpdateRewardIndex {};
+        let _res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
+
+        //index updated after update reward index
+        let res = query(deps.as_mut(), env.clone(), QueryMsg::State {}).unwrap();
+        let config_response: StateResponse = from_binary(&res).unwrap();
+        assert_eq!(config_response.global_index, Decimal256::one());
+
+        //second bond
+        let info = mock_info(
+            "creator2",
+            &vec![Coin {
+                denom: "staked".to_string(),
+                amount: Uint128::new(200),
+            }],
+        );
+        let msg = ExecuteMsg::BondStake {};
+        let _res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
+
+        //update balance
+        deps.querier.update_balance(
+            env.contract.address.as_str(),
+            vec![Coin {
+                denom: "rewards".to_string(),
+                amount: Uint128::new(300),
+            }],
+        );
+        //check global index before update
+        let res = query(deps.as_mut(), env.clone(), QueryMsg::State {}).unwrap();
+        let config_response: StateResponse = from_binary(&res).unwrap();
+        assert_eq!(config_response.global_index, Decimal256::one());
+
+        //update distrubution index
+        let msg = ExecuteMsg::UpdateRewardIndex {};
+        let _res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
+
+        //check global index
+        let res = query(deps.as_mut(), env.clone(), QueryMsg::State {}).unwrap();
+        let config_response: StateResponse = from_binary(&res).unwrap();
+        assert_eq!(
+            config_response.global_index,
+            Decimal256::from_ratio(Uint128::new(500), Uint128::new(300))
+        );
+    }
+
+    #[test]
+    pub fn test_recieve_rewards() {
+        let mut deps = mock_dependencies_with_balance(&[]);
+        let init_msg = default_init();
+        let env = mock_env();
+        instantiate(
+            deps.as_mut(),
+            env.clone(),
+            mock_info("creator1", &[]),
+            init_msg,
+        )
+        .unwrap();
+
+        //first bond
+        let info = mock_info(
+            "creator1",
+            &vec![Coin {
+                denom: "staked".to_string(),
+                amount: Uint128::new(100),
+            }],
+        );
+        let msg = ExecuteMsg::BondStake {};
+        let _res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
+
+        //try recieve rewards before any rewards in contract
+        let info = mock_info("creator1", &[]);
+        let msg = ExecuteMsg::ReceiveReward {};
+        let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
+        assert_eq!(res.unwrap_err(), ContractError::NoRewards {});
+
+        //update balance
+        deps.querier.update_balance(
+            env.contract.address.as_str(),
+            vec![Coin {
+                denom: "rewards".to_string(),
+                amount: Uint128::new(100),
+            }],
+        );
+
+        //update reward index
+        let msg = ExecuteMsg::UpdateRewardIndex {};
+        let _res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
+
+        //first bond recieve rewards
+        let info = mock_info("creator1", &[]);
+        let msg = ExecuteMsg::ReceiveReward {};
+        let res = execute(deps.as_mut(), env.clone(), info.clone(), msg).unwrap();
+        //check first creator rewards
+        assert_eq!(
+            res.messages.get(0).unwrap().msg,
+            CosmosMsg::Bank(BankMsg::Send {
+                to_address: info.sender.to_string(),
+                amount: vec![Coin {
+                    denom: "rewards".to_string(),
+                    amount: Uint128::new(100),
+                }],
+            })
+        );
+
+        //second bond
+        let info = mock_info(
+            "creator2",
+            &vec![Coin {
+                denom: "staked".to_string(),
+                amount: Uint128::new(200),
+            }],
+        );
+        let msg = ExecuteMsg::BondStake {};
+        let _res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
+
+        //update balance
+        deps.querier.update_balance(
+            env.contract.address.as_str(),
+            vec![Coin {
+                denom: "rewards".to_string(),
+                amount: Uint128::new(200),
+            }],
+        );
+
+        //update reward index
+        let msg = ExecuteMsg::UpdateRewardIndex {};
+        let _res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
+
+        //first bond recieve rewards again but lower amount
+        let info = mock_info("creator1", &[]);
+        let msg = ExecuteMsg::ReceiveReward {};
+        let res = execute(deps.as_mut(), env.clone(), info.clone(), msg).unwrap();
+        //check first creator rewards
+        assert_eq!(
+            res.messages.get(0).unwrap().msg,
+            CosmosMsg::Bank(BankMsg::Send {
+                to_address: info.sender.to_string(),
+                amount: vec![Coin {
+                    denom: "rewards".to_string(),
+                    amount: Uint128::new(33),
+                }],
+            })
+        );
+    }
+
+    #[test]
+    //test execute update holders rewards
+    pub fn test_update_holders_rewards() {
+        let mut deps = mock_dependencies_with_balance(&[]);
         let init_msg = default_init();
         let env = mock_env();
 
@@ -129,29 +346,68 @@ mod tests {
         );
 
         let msg = ExecuteMsg::BondStake {};
-        //let _res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
+        let _res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
 
-        let mut deps = mock_dependencies_with_balances(&[(
-            "contract_balance",
+        //second bond
+        let info = mock_info(
+            "creator2",
             &vec![Coin {
+                denom: "staked".to_string(),
+                amount: Uint128::new(200),
+            }],
+        );
+        let msg = ExecuteMsg::BondStake {};
+        let _res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
+
+        //update balance
+        deps.querier.update_balance(
+            env.contract.address.as_str(),
+            vec![Coin {
                 denom: "rewards".to_string(),
                 amount: Uint128::new(100),
             }],
-        )]);
-
-        //no index update before update reward index
-        let res = query(deps.as_mut(), env.clone(), QueryMsg::State {}).unwrap();
-        let config_response: StateResponse = from_binary(&res).unwrap();
-        assert_eq!(
-            config_response,
-            StateResponse {
-                reward_denom: "rewards".to_string(),
-                staked_token_denom: "staked".to_string(),
-                global_index: Decimal256::zero(),
-                total_staked: Uint128::new(100),
-                prev_reward_balance: Uint128::new(100),
-            }
         );
+
+        //update reward index
+        let msg = ExecuteMsg::UpdateRewardIndex {};
+        let _res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
+
+        //update first holders rewards
+        let info: MessageInfo = mock_info("creator1", &[]);
+        let msg = ExecuteMsg::UpdateHoldersreward { address: None };
+        let _res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
+
+        //check first holder rewards
+        let res = query(
+            deps.as_mut(),
+            env.clone(),
+            QueryMsg::Holder {
+                address: "creator1".to_string(),
+            },
+        )
+        .unwrap();
+        let holder_response: HolderResponse = from_binary(&res).unwrap();
+        assert_eq!(holder_response.pending_rewards, Uint128::new(33));
+
+        //update second holders rewards
+        let info: MessageInfo = mock_info("creator2", &[]);
+        let msg = ExecuteMsg::UpdateHoldersreward { address: None };
+        let _res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
+
+
+        //check second holders rewards
+        let res = query(
+            deps.as_mut(),
+            env.clone(),
+            QueryMsg::Holder {
+                address: "creator2".to_string(),
+            },
+        )
+        .unwrap();
+
+        let holder_response: HolderResponse = from_binary(&res).unwrap();
+
+        assert_eq!(holder_response.pending_rewards, Uint128::new(66));
     }
 }
 

@@ -83,16 +83,19 @@ pub fn update_reward_index(
         .query_balance(&env.contract.address, &state.reward_denom)?
         .amount;
     let previous_balance = state.prev_reward_balance;
-
+    println!("current_balance: {}", current_balance);
+    println!("previous_balance: {}", previous_balance);
     // claimed_rewards = current_balance - prev_balance;
     let claimed_rewards = current_balance.checked_sub(previous_balance)?;
-
+    println!("claimed_rewards: {}", claimed_rewards);
     state.prev_reward_balance = current_balance;
 
     // global_index += claimed_rewards / total_balance;
-    state.global_index = state
-        .global_index
-        .add(Decimal256::from_ratio(claimed_rewards, state.total_staked));
+    if !state.total_staked.is_zero() {
+        state.global_index = state
+            .global_index
+            .add(Decimal256::from_ratio(claimed_rewards, state.total_staked));
+    }
 
     STATE.save(deps.storage, &state)?;
     Ok(claimed_rewards)
@@ -112,7 +115,9 @@ pub fn execute_update_holders_rewards(
     }
     //validate address
     let addr = maybe_addr(deps.api, address)?.unwrap_or(info.sender);
-    let mut holder = HOLDERS.load(deps.storage, &Addr::unchecked(addr))?;
+    let mut holder = HOLDERS.load(deps.storage, &Addr::unchecked(addr.clone()))?;
+    update_holders_rewards(deps.branch(), env, &mut holder)?;
+    HOLDERS.save(deps.storage, &Addr::unchecked(addr), &holder)?;
 
     let res = Response::new()
         .add_attribute("action", "update_reward_index")
@@ -172,18 +177,25 @@ pub fn execute_receive_reward(
     )?;
 
     //send rewards to the holder
-    let res = Response::new()
-        .add_message(CosmosMsg::Bank(BankMsg::Send {
-            to_address: info.sender.to_string(),
-            amount: vec![Coin {
-                denom: state.reward_denom.to_string(),
-                amount: rewards_uint128,
-            }],
-        }))
-        .add_attribute("action", "receive_reward")
-        .add_attribute("rewards", rewards_uint128);
 
-    Ok(res)
+    let send_msg = CosmosMsg::Bank(BankMsg::Send {
+        to_address: info.sender.to_string(),
+        amount: vec![Coin {
+            denom: state.reward_denom.to_string(),
+            amount: rewards_uint128,
+        }],
+    });
+
+    if (rewards_uint128.is_zero()) {
+        return Err(ContractError::NoRewards {});
+    }
+
+    Ok(Response::new()
+        .add_message(send_msg)
+        .add_attribute("action", "receive_reward")
+        .add_attribute("rewards", rewards_uint128)
+        .add_attribute("holder", info.sender)
+        .add_attribute("holder_balance", holder.balance))
 }
 
 pub fn execute_bond(
