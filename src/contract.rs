@@ -282,12 +282,12 @@ pub fn execute_withdraw(
             to_address: info.sender.to_string(),
             amount: vec![
                 Coin {
-                    denom: state.staked_token_denom.to_string(),
-                    amount: withdraw_amount,
-                },
-                Coin {
                     denom: state.reward_denom.to_string(),
                     amount: holder.pending_rewards,
+                },
+                Coin {
+                    denom: state.staked_token_denom.to_string(),
+                    amount: withdraw_amount,
                 },
             ],
         }))
