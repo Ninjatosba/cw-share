@@ -3,11 +3,11 @@ use std::fs::create_dir_all;
 
 use cosmwasm_schema::{export_schema, remove_schemas, schema_for};
 
-use cw20_reward::msg::{
+use cw_controllers::{Claim, ClaimsResponse};
+use cw_rewarddistrubutor::msg::{
     AccruedRewardsResponse, ExecuteMsg, HolderResponse, HoldersResponse, InstantiateMsg,
     MigrateMsg, QueryMsg, ReceiveMsg, StateResponse,
 };
-use cw_controllers::{Claim, ClaimsResponse};
 
 fn main() {
     let mut out_dir = current_dir().unwrap();

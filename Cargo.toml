@@ -1,5 +1,5 @@
 [package]
-name = "cw20-reward"
+name = "cw-rewarddistrubutor"
 version = "0.11.1"
 authors = ["MSNTCS <mohammad@terra.money>", "orkun kulce <orkun@deuslabs.fi>"]
 edition = "2018"

@@ -3,6 +3,7 @@ use cosmwasm_std::{
     MessageInfo, Response, StdError, StdResult, Uint128, Uint256,
 };
 use cw0::maybe_addr;
+use cw_utils::must_pay;
 
 use crate::msg::{
     AccruedRewardsResponse, ConfigResponse, ExecuteMsg, HolderResponse, InstantiateMsg, MigrateMsg,
@@ -55,7 +56,7 @@ pub fn execute(
         ExecuteMsg::BondStake {} => execute_bond(deps, env, info),
         ExecuteMsg::UpdateRewardIndex {} => execute_update_reward_index(deps, env),
         ExecuteMsg::UpdateHoldersReward { address } => {
-            execute_update_holders_rewards(deps, env, info, address)
+            execute_update_stakers_rewards(deps, env, info, address)
         }
         ExecuteMsg::WithdrawStake { amount } => execute_withdraw(deps, env, info, amount),
         ExecuteMsg::ReceiveReward {} => execute_receive_reward(deps, env, info),
@@ -70,7 +71,7 @@ pub fn execute(
 /// Increase global_index according to claimed rewards amount
 pub fn execute_update_reward_index(deps: DepsMut, env: Env) -> Result<Response, ContractError> {
     let mut state = STATE.load(deps.storage)?;
-    let mut config = CONFIG.load(deps.storage)?;
+    let config = CONFIG.load(deps.storage)?;
 
     // Zero staking check
     if state.total_staked.is_zero() {
@@ -116,7 +117,7 @@ pub fn update_reward_index(
     Ok(claimed_rewards)
 }
 
-pub fn execute_update_holders_rewards(
+pub fn execute_update_stakers_rewards(
     mut deps: DepsMut,
     env: Env,
     info: MessageInfo,
@@ -131,7 +132,7 @@ pub fn execute_update_holders_rewards(
     //validate address
     let addr = maybe_addr(deps.api, address)?.unwrap_or(info.sender);
     let mut holder = HOLDERS.load(deps.storage, &Addr::unchecked(addr.clone()))?;
-    update_holders_rewards(deps.branch(), env, &mut holder)?;
+    update_stakers_rewards(deps.branch(), env, &mut holder)?;
     HOLDERS.save(deps.storage, &Addr::unchecked(addr), &holder)?;
 
     let res = Response::new()
@@ -142,7 +143,7 @@ pub fn execute_update_holders_rewards(
     Ok(res)
 }
 
-pub fn update_holders_rewards(
+pub fn update_stakers_rewards(
     mut deps: DepsMut,
     env: Env,
     holder: &mut Holder,
@@ -185,7 +186,7 @@ pub fn execute_receive_reward(
     if holder.balance.is_zero() {
         return Err(ContractError::NoBond {});
     }
-    let rewards_uint128 = update_holders_rewards(deps.branch(), env, &mut holder)?;
+    let rewards_uint128 = update_stakers_rewards(deps.branch(), env, &mut holder)?;
 
     HOLDERS.save(
         deps.storage,
@@ -223,13 +224,9 @@ pub fn execute_bond(
     let mut state = STATE.load(deps.storage)?;
     let config = CONFIG.load(deps.storage)?;
 
+    //check if denom sent is the same as the staked token else return error
+    let amount = must_pay(&info, &config.staked_token_denom)?;
     let addr = info.sender;
-    let amount = info
-        .funds
-        .iter()
-        .find(|coin| coin.denom == config.staked_token_denom)
-        .map(|coin| coin.amount)
-        .unwrap_or(Uint128::zero());
 
     if amount.is_zero() {
         return Err(ContractError::NoFund {});
@@ -255,7 +252,7 @@ pub fn execute_bond(
                 return Err(ContractError::NoBond {});
             }
 
-            update_holders_rewards(deps.branch(), env.clone(), &mut holder)?;
+            update_stakers_rewards(deps.branch(), env.clone(), &mut holder)?;
             holder.balance += amount;
 
             HOLDERS.save(deps.storage, &addr, &holder)?;
@@ -291,7 +288,7 @@ pub fn execute_withdraw(
         return Err(ContractError::DecreaseAmountExceeds(holder.balance));
     }
 
-    update_holders_rewards(deps.branch(), env.clone(), &mut holder)?;
+    update_stakers_rewards(deps.branch(), env.clone(), &mut holder)?;
     update_reward_index(&mut state, config.clone(), deps.branch(), env.clone())?;
 
     //send rewards and withdraw amount to the holder

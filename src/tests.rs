@@ -6,6 +6,7 @@ mod tests {
     use cosmwasm_std::{
         from_binary, Addr, BankMsg, Coin, CosmosMsg, Decimal256, MessageInfo, Uint128,
     };
+    use cw_utils::PaymentError;
 
     use crate::contract::{execute, instantiate, query};
     use crate::msg::{
@@ -109,7 +110,19 @@ mod tests {
         let info = mock_info("staker1", &[]);
         let msg = ExecuteMsg::BondStake {};
         let res = execute(deps.as_mut(), env.clone(), info.clone(), msg).unwrap_err();
-        assert_eq!(res, ContractError::NoFund {});
+        assert_eq!(res, PaymentError::NoFunds {}.into());
+
+        //bond with wrong denom
+        let info = mock_info(
+            "random",
+            &vec![Coin {
+                denom: "wrong".to_string(),
+                amount: Uint128::new(100),
+            }],
+        );
+        let msg = ExecuteMsg::BondStake {};
+        let res = execute(deps.as_mut(), env.clone(), info.clone(), msg).unwrap_err();
+        assert_eq!(res, PaymentError::MissingDenom("staked".to_string()).into());
 
         //first bond
         let info = mock_info(
@@ -396,7 +409,7 @@ mod tests {
 
     #[test]
     //test execute update holders rewards
-    pub fn test_update_holders_rewards() {
+    pub fn test_update_stakers_rewards() {
         let mut deps = mock_dependencies_with_balance(&[]);
         let init_msg = default_init();
         let env = mock_env();
@@ -447,12 +460,12 @@ mod tests {
             }],
         );
 
-        //update first holders rewards
+        //update first stakers rewards
         let info: MessageInfo = mock_info("staker1", &[]);
         let msg = ExecuteMsg::UpdateHoldersReward { address: None };
         let _res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
 
-        //check first holder rewards
+        //check first stakers rewards
         let res = query(
             deps.as_mut(),
             env.clone(),
@@ -464,12 +477,12 @@ mod tests {
         let holder_response: HolderResponse = from_binary(&res).unwrap();
         assert_eq!(holder_response.pending_rewards, Uint128::new(33));
 
-        //update second holders rewards
+        //update second stakers rewards
         let info: MessageInfo = mock_info("staker2", &[]);
         let msg = ExecuteMsg::UpdateHoldersReward { address: None };
         let _res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
 
-        //check second holders rewards
+        //check second stakers rewards
         let res = query(
             deps.as_mut(),
             env.clone(),
@@ -478,7 +491,6 @@ mod tests {
             },
         )
         .unwrap();
-
         let holder_response: HolderResponse = from_binary(&res).unwrap();
 
         assert_eq!(holder_response.pending_rewards, Uint128::new(66));
@@ -566,8 +578,8 @@ mod tests {
 // Test that the contract's global_index is updated correctly based on the claimed rewards.👍
 // Test that the contract's prev_reward_balance is updated correctly.:👍
 // Test that the UpdateHoldersReward message is handled correctly:
-// Test that the user's rewards are calculated correctly based on their staker's index and staked tokens.
-// Test that the user's rewards are added to their balance correctly.
+// Test that the user's rewards are calculated correctly based on their staker's index and staked tokens.:👍
+// Test that the user's rewards are added to their balance correctly.:👍
 // Test that the WithdrawStake message is handled correctly:
 // Test that the user's staked tokens are removed from the contract's total_staked value.
 // Test that the user's staker's index and staked tokens are removed from the contract's state.

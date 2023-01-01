@@ -229,6 +229,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "cw-rewarddistrubutor"
+version = "0.11.1"
+dependencies = [
+ "cosmwasm-schema",
+ "cosmwasm-std",
+ "cw-controllers",
+ "cw-multi-test",
+ "cw-storage-plus",
+ "cw-utils 0.16.0",
+ "cw0",
+ "cw20",
+ "schemars",
+ "serde",
+ "thiserror",
+]
+
+[[package]]
 name = "cw-storage-plus"
 version = "0.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -301,23 +318,6 @@ dependencies = [
  "cw-utils 0.11.1",
  "schemars",
  "serde",
-]
-
-[[package]]
-name = "cw20-reward"
-version = "0.11.1"
-dependencies = [
- "cosmwasm-schema",
- "cosmwasm-std",
- "cw-controllers",
- "cw-multi-test",
- "cw-storage-plus",
- "cw-utils 0.16.0",
- "cw0",
- "cw20",
- "schemars",
- "serde",
- "thiserror",
 ]
 
 [[package]]
