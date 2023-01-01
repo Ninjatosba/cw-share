@@ -5,8 +5,8 @@ use cosmwasm_std::{
 use cw0::maybe_addr;
 
 use crate::msg::{
-    AccruedRewardsResponse, ExecuteMsg, HolderResponse, InstantiateMsg, MigrateMsg, QueryMsg,
-    StateResponse,
+    AccruedRewardsResponse, ConfigResponse, ExecuteMsg, HolderResponse, InstantiateMsg, MigrateMsg,
+    QueryMsg, StateResponse,
 };
 use crate::state::{Config, Holder, State, CONFIG, HOLDERS, STATE};
 use crate::ContractError;
@@ -14,7 +14,6 @@ use crate::ContractError;
 use std::convert::TryInto;
 use std::ops::Add;
 use std::str::FromStr;
-use std::sync::Arc;
 
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn instantiate(
@@ -23,10 +22,16 @@ pub fn instantiate(
     info: MessageInfo,
     msg: InstantiateMsg,
 ) -> StdResult<Response> {
+    //check if admin is a valid address and if it is, set it to the admin field else set it to the sender
+    let admin = match msg.admin {
+        Some(admin) => deps.api.addr_validate(&admin)?,
+        None => info.sender.clone(),
+    };
+
     let config: Config = Config {
         staked_token_denom: msg.staked_token_denom,
         reward_denom: msg.reward_denom,
-        admin: info.sender.clone(),
+        admin: admin,
     };
     let state = State {
         global_index: Decimal256::zero(),
@@ -49,7 +54,7 @@ pub fn execute(
     match msg {
         ExecuteMsg::BondStake {} => execute_bond(deps, env, info),
         ExecuteMsg::UpdateRewardIndex {} => execute_update_reward_index(deps, env),
-        ExecuteMsg::UpdateHoldersreward { address } => {
+        ExecuteMsg::UpdateHoldersReward { address } => {
             execute_update_holders_rewards(deps, env, info, address)
         }
         ExecuteMsg::WithdrawStake { amount } => execute_withdraw(deps, env, info, amount),
@@ -95,11 +100,9 @@ pub fn update_reward_index(
         .query_balance(&env.contract.address, &config.reward_denom)?
         .amount;
     let previous_balance = state.prev_reward_balance;
-    println!("current_balance: {}", current_balance);
-    println!("previous_balance: {}", previous_balance);
     // claimed_rewards = current_balance - prev_balance;
     let claimed_rewards = current_balance.checked_sub(previous_balance)?;
-    println!("claimed_rewards: {}", claimed_rewards);
+
     state.prev_reward_balance = current_balance;
 
     // global_index += claimed_rewards / total_balance;
@@ -175,7 +178,7 @@ pub fn execute_receive_reward(
     env: Env,
     info: MessageInfo,
 ) -> Result<Response, ContractError> {
-    let state = STATE.load(deps.storage)?;
+    let _state = STATE.load(deps.storage)?;
     let config = CONFIG.load(deps.storage)?;
 
     let mut holder = HOLDERS.load(deps.storage, &Addr::unchecked(info.sender.as_str()))?;
@@ -363,22 +366,28 @@ pub fn query(deps: DepsMut, env: Env, msg: QueryMsg) -> StdResult<Binary> {
             to_binary(&query_accrued_rewards(env, deps, address)?)
         }
         QueryMsg::Holder { address } => to_binary(&query_holder(env, deps, address)?),
-        // QueryMsg::Holders { start_after, limit } => {
-        //     to_binary(&query_holders(deps, start_after, limit)?)
-        // } // QueryMsg::Claims { address } => to_binary(&query_claims(deps, address)?),
+        QueryMsg::Config {} => to_binary(&query_config(deps, env, msg)?),
     }
 }
 
 pub fn query_state(deps: DepsMut, _env: Env, _msg: QueryMsg) -> StdResult<StateResponse> {
     let state = STATE.load(deps.storage)?;
-    let config = CONFIG.load(deps.storage)?;
 
     Ok(StateResponse {
-        staked_token_denom: config.staked_token_denom,
-        reward_denom: config.reward_denom,
         total_staked: state.total_staked,
         global_index: state.global_index,
         prev_reward_balance: state.prev_reward_balance,
+    })
+}
+
+//query config
+pub fn query_config(deps: DepsMut, _env: Env, _msg: QueryMsg) -> StdResult<ConfigResponse> {
+    let config = CONFIG.load(deps.storage)?;
+
+    Ok(ConfigResponse {
+        staked_token_denom: config.staked_token_denom,
+        reward_denom: config.reward_denom,
+        admin: config.admin.into_string(),
     })
 }
 
@@ -389,7 +398,6 @@ pub fn query_accrued_rewards(
 ) -> StdResult<AccruedRewardsResponse> {
     let addr = deps.api.addr_validate(&address.as_str())?;
     let holder = HOLDERS.load(deps.storage, &addr)?;
-    let _state = STATE.load(deps.storage)?;
 
     Ok(AccruedRewardsResponse {
         rewards: holder.pending_rewards,
@@ -398,7 +406,6 @@ pub fn query_accrued_rewards(
 
 pub fn query_holder(_env: Env, deps: DepsMut, address: String) -> StdResult<HolderResponse> {
     let holder: Holder = HOLDERS.load(deps.storage, &deps.api.addr_validate(address.as_str())?)?;
-    let _state = STATE.load(deps.storage)?;
     Ok(HolderResponse {
         address: address,
         balance: holder.balance,

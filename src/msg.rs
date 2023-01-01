@@ -7,6 +7,7 @@ use cosmwasm_std::{Addr, Decimal, Decimal256, Uint128};
 pub struct InstantiateMsg {
     pub staked_token_denom: String,
     pub reward_denom: String,
+    pub admin: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
@@ -19,7 +20,7 @@ pub enum ExecuteMsg {
     /// Update the reward index
     UpdateRewardIndex {},
 
-    UpdateHoldersreward {
+    UpdateHoldersReward {
         address: Option<String>,
     },
     ////////////////////
@@ -60,6 +61,7 @@ pub enum QueryMsg {
     State {},
     AccruedRewards { address: String },
     Holder { address: String },
+    Config {},
     // Holders {
     //     start_after: Option<String>,
     //     limit: Option<u32>,
@@ -71,11 +73,15 @@ pub enum QueryMsg {
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct StateResponse {
-    pub staked_token_denom: String,
-    pub reward_denom: String,
     pub global_index: Decimal256,
     pub total_staked: Uint128,
     pub prev_reward_balance: Uint128,
+}
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+pub struct ConfigResponse {
+    pub staked_token_denom: String,
+    pub reward_denom: String,
+    pub admin: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]

@@ -2,7 +2,7 @@ use crate::msg::HolderResponse;
 use cosmwasm_std::{
     Addr, Api, CanonicalAddr, Decimal, Decimal256, Deps, DepsMut, Order, StdResult, Uint128,
 };
-use cw20::Balance;
+
 use cw_controllers::Claims;
 use cw_storage_plus::{Bound, Item, Map};
 use schemars::JsonSchema;
