@@ -1,6 +1,5 @@
-use cosmwasm_std::{ConversionOverflowError, DivideByZeroError, OverflowError, StdError, Uint128};
+use cosmwasm_std::{OverflowError, StdError, Uint128};
 use cw_utils::PaymentError;
-use std::convert::Infallible;
 use thiserror::Error;
 
 #[derive(Error, Debug, PartialEq)]
