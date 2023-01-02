@@ -56,7 +56,7 @@ mod tests {
         //default response attributes is empty
         assert_eq!(0, res.messages.len());
 
-        let res = query(deps.as_mut(), env.clone(), QueryMsg::State {}).unwrap();
+        let res = query(deps.as_ref(), env.clone(), QueryMsg::State {}).unwrap();
         let config_response: StateResponse = from_binary(&res).unwrap();
         //check if state is correct
         assert_eq!(
@@ -68,7 +68,7 @@ mod tests {
             }
         );
         //query config
-        let res = query(deps.as_mut(), env.clone(), QueryMsg::Config {}).unwrap();
+        let res = query(deps.as_ref(), env.clone(), QueryMsg::Config {}).unwrap();
         let config_response: ConfigResponse = from_binary(&res).unwrap();
         //check if config is correct
         assert_eq!(
@@ -92,7 +92,7 @@ mod tests {
         let _res = instantiate(deps.as_mut(), env.clone(), info, init_msg).unwrap();
 
         //query config
-        let res = query(deps.as_mut(), env.clone(), QueryMsg::Config {}).unwrap();
+        let res = query(deps.as_ref(), env.clone(), QueryMsg::Config {}).unwrap();
         let config_response: ConfigResponse = from_binary(&res).unwrap();
         //admin is set to admin
         assert_eq!(config_response.admin, "admin".to_string(),);
@@ -138,7 +138,7 @@ mod tests {
 
         //query holder
         let res = query(
-            deps.as_mut(),
+            deps.as_ref(),
             env.clone(),
             QueryMsg::Holder {
                 address: "staker1".to_string(),
@@ -158,7 +158,7 @@ mod tests {
         );
 
         //query contract state for total_staked
-        let res = query(deps.as_mut(), env.clone(), QueryMsg::State {}).unwrap();
+        let res = query(deps.as_ref(), env.clone(), QueryMsg::State {}).unwrap();
         let config_response: StateResponse = from_binary(&res).unwrap();
         assert_eq!(config_response.total_staked, Uint128::new(100),);
 
@@ -184,7 +184,7 @@ mod tests {
 
         //query staker2's index
         let res = query(
-            deps.as_mut(),
+            deps.as_ref(),
             env.clone(),
             QueryMsg::Holder {
                 address: "staker2".to_string(),
@@ -217,7 +217,7 @@ mod tests {
 
         //query staker2
         let res = query(
-            deps.as_mut(),
+            deps.as_ref(),
             env.clone(),
             QueryMsg::Holder {
                 address: "staker2".to_string(),
@@ -270,7 +270,7 @@ mod tests {
         );
 
         //no index update before update reward index
-        let res = query(deps.as_mut(), env.clone(), QueryMsg::State {}).unwrap();
+        let res = query(deps.as_ref(), env.clone(), QueryMsg::State {}).unwrap();
         let config_response: StateResponse = from_binary(&res).unwrap();
         assert_eq!(config_response.global_index, Decimal256::zero(),);
 
@@ -279,7 +279,7 @@ mod tests {
         let _res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
 
         //index updated after update reward index
-        let res = query(deps.as_mut(), env.clone(), QueryMsg::State {}).unwrap();
+        let res = query(deps.as_ref(), env.clone(), QueryMsg::State {}).unwrap();
         let config_response: StateResponse = from_binary(&res).unwrap();
         assert_eq!(config_response.global_index, Decimal256::one());
 
@@ -303,7 +303,7 @@ mod tests {
             }],
         );
         //check global index before update
-        let res = query(deps.as_mut(), env.clone(), QueryMsg::State {}).unwrap();
+        let res = query(deps.as_ref(), env.clone(), QueryMsg::State {}).unwrap();
         let config_response: StateResponse = from_binary(&res).unwrap();
         assert_eq!(config_response.global_index, Decimal256::one());
 
@@ -312,7 +312,7 @@ mod tests {
         let _res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
 
         //check global index
-        let res = query(deps.as_mut(), env.clone(), QueryMsg::State {}).unwrap();
+        let res = query(deps.as_ref(), env.clone(), QueryMsg::State {}).unwrap();
         let config_response: StateResponse = from_binary(&res).unwrap();
         assert_eq!(
             config_response.global_index,
@@ -330,7 +330,7 @@ mod tests {
             }],
         );
         //check prev_reward_balance of state which should be 300 before update
-        let res = query(deps.as_mut(), env.clone(), QueryMsg::State {}).unwrap();
+        let res = query(deps.as_ref(), env.clone(), QueryMsg::State {}).unwrap();
         let config_response: StateResponse = from_binary(&res).unwrap();
         assert_eq!(config_response.prev_reward_balance, Uint128::new(300));
 
@@ -339,7 +339,7 @@ mod tests {
         let _res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
 
         //check prev_reward_balance of state which should be 500 after update
-        let res = query(deps.as_mut(), env.clone(), QueryMsg::State {}).unwrap();
+        let res = query(deps.as_ref(), env.clone(), QueryMsg::State {}).unwrap();
         let config_response: StateResponse = from_binary(&res).unwrap();
         assert_eq!(config_response.prev_reward_balance, Uint128::new(500));
     }
@@ -503,7 +503,7 @@ mod tests {
 
         //check first stakers rewards
         let res = query(
-            deps.as_mut(),
+            deps.as_ref(),
             env.clone(),
             QueryMsg::Holder {
                 address: "staker1".to_string(),
@@ -524,7 +524,7 @@ mod tests {
 
         //check second stakers rewards
         let res = query(
-            deps.as_mut(),
+            deps.as_ref(),
             env.clone(),
             QueryMsg::Holder {
                 address: "staker2".to_string(),
@@ -604,7 +604,7 @@ mod tests {
         );
 
         //check state for total staked
-        let res = query(deps.as_mut(), env.clone(), QueryMsg::State {}).unwrap();
+        let res = query(deps.as_ref(), env.clone(), QueryMsg::State {}).unwrap();
         let state: StateResponse = from_binary(&res).unwrap();
         assert_eq!(state.total_staked, Uint128::new(200));
     }
@@ -642,7 +642,7 @@ mod tests {
         let _res = execute(deps.as_mut(), env.clone(), info.clone(), msg).unwrap();
 
         //check config
-        let res = query(deps.as_mut(), env.clone(), QueryMsg::Config {}).unwrap();
+        let res = query(deps.as_ref(), env.clone(), QueryMsg::Config {}).unwrap();
         let config_response: ConfigResponse = from_binary(&res).unwrap();
         assert_eq!(config_response.admin, "new_admin".to_string());
         assert_eq!(config_response.reward_denom, "new_reward_denom".to_string());

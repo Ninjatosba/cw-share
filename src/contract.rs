@@ -1,5 +1,5 @@
 use cosmwasm_std::{
-    entry_point, to_binary, Addr, BankMsg, Binary, Coin, CosmosMsg, Decimal256, DepsMut, Env,
+    entry_point, to_binary, Addr, BankMsg, Binary, Coin, CosmosMsg, Decimal256, Deps, DepsMut, Env,
     MessageInfo, Response, StdError, StdResult, Uint128, Uint256,
 };
 use cw0::maybe_addr;
@@ -351,7 +351,7 @@ pub fn execute_update_config(
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
-pub fn query(deps: DepsMut, env: Env, msg: QueryMsg) -> StdResult<Binary> {
+pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> StdResult<Binary> {
     match msg {
         QueryMsg::State {} => to_binary(&query_state(deps, env, msg)?),
         QueryMsg::AccruedRewards { address } => {
@@ -362,7 +362,7 @@ pub fn query(deps: DepsMut, env: Env, msg: QueryMsg) -> StdResult<Binary> {
     }
 }
 
-pub fn query_state(deps: DepsMut, _env: Env, _msg: QueryMsg) -> StdResult<StateResponse> {
+pub fn query_state(deps: Deps, _env: Env, _msg: QueryMsg) -> StdResult<StateResponse> {
     let state = STATE.load(deps.storage)?;
 
     Ok(StateResponse {
@@ -373,7 +373,7 @@ pub fn query_state(deps: DepsMut, _env: Env, _msg: QueryMsg) -> StdResult<StateR
 }
 
 //query config
-pub fn query_config(deps: DepsMut, _env: Env, _msg: QueryMsg) -> StdResult<ConfigResponse> {
+pub fn query_config(deps: Deps, _env: Env, _msg: QueryMsg) -> StdResult<ConfigResponse> {
     let config = CONFIG.load(deps.storage)?;
 
     Ok(ConfigResponse {
@@ -385,7 +385,7 @@ pub fn query_config(deps: DepsMut, _env: Env, _msg: QueryMsg) -> StdResult<Confi
 
 pub fn query_accrued_rewards(
     _env: Env,
-    deps: DepsMut,
+    deps: Deps,
     address: String,
 ) -> StdResult<AccruedRewardsResponse> {
     let addr = deps.api.addr_validate(&address.as_str())?;
@@ -396,7 +396,7 @@ pub fn query_accrued_rewards(
     })
 }
 
-pub fn query_holder(_env: Env, deps: DepsMut, address: String) -> StdResult<HolderResponse> {
+pub fn query_holder(_env: Env, deps: Deps, address: String) -> StdResult<HolderResponse> {
     let holder: Holder = HOLDERS.load(deps.storage, &deps.api.addr_validate(address.as_str())?)?;
     Ok(HolderResponse {
         address: address,
