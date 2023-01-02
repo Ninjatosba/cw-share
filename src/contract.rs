@@ -157,14 +157,12 @@ pub fn update_holders_rewards(
     let rewards_uint128;
     //index_diff = global_index - holder.index;
     let index_diff: Decimal256 = state.global_index - holder.index;
-    println!("index_diff: {}", index_diff);
-    println!("holder.balance: {}", holder.balance);
     //reward_amount = holder.balance * index_diff + holder.pending_rewards;
     let reward_amount = Decimal256::from_ratio(holder.balance, Uint256::one())
         .checked_mul(index_diff)?
         .checked_add(holder.dec_rewards)?;
     let decimals = get_decimals(reward_amount)?;
-
+    println!("decimals: {}", decimals);
     //floor(reward_amount)
     rewards_uint128 = (reward_amount * Uint256::one())
         .try_into()

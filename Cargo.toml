@@ -1,9 +1,9 @@
 [package]
 name = "cw-rewarddistrubutor"
-version = "0.11.1"
-authors = ["MSNTCS <mohammad@terra.money>", "orkun kulce <orkun@deuslabs.fi>"]
+version = "0.1.1"
+authors = ["Deniz <deniz@deuslabs.fi>"]
 edition = "2018"
-description= "cw20 reward distribution smart contract based on stake"
+description= "native token reward distribution smart contract based on stake"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/CosmWasm/cw-tokens/contracts/cw20-reward"
 exclude = [

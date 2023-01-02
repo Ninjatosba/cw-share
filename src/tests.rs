@@ -193,10 +193,47 @@ mod tests {
         .unwrap();
         let holder_response: HolderResponse = from_binary(&res).unwrap();
 
-        //chack if index is correct
+        //check if index is correct
         assert_eq!(
             holder_response.index,
             Decimal256::from_ratio(Uint128::new(1000000), Uint128::new(100))
+        );
+
+        //test bond again after withdrawal of user
+        let info = mock_info("staker2", &[]);
+        let msg = ExecuteMsg::WithdrawStake { amount: None };
+        let _res = execute(deps.as_mut(), env.clone(), info.clone(), msg).unwrap();
+
+        //bond again
+        let info = mock_info(
+            "staker2",
+            &vec![Coin {
+                denom: "staked".to_string(),
+                amount: Uint128::new(100),
+            }],
+        );
+        let msg = ExecuteMsg::BondStake {};
+        let _res = execute(deps.as_mut(), env.clone(), info.clone(), msg).unwrap();
+
+        //query staker2
+        let res = query(
+            deps.as_mut(),
+            env.clone(),
+            QueryMsg::Holder {
+                address: "staker2".to_string(),
+            },
+        )
+        .unwrap();
+        let holder_response: HolderResponse = from_binary(&res).unwrap();
+        assert_eq!(
+            holder_response,
+            HolderResponse {
+                address: "staker2".to_string(),
+                balance: Uint128::new(100),
+                index: Decimal256::from_ratio(Uint128::new(1000000), Uint128::new(100)),
+                pending_rewards: Uint128::zero(),
+                dec_rewards: Decimal256::zero(),
+            }
         );
     }
 
@@ -634,9 +671,9 @@ mod tests {
 // Test that the user's rewards are added to their balance correctly.:👍
 // Test that the WithdrawStake message is handled correctly:
 // Test that the user's staked tokens are removed from the contract's total_staked value.:👍
-// Test that the user's staker's index and staked tokens are removed from the contract's state.
-// Test that the user's rewards are calculated correctly based on their staker's index and staked tokens.
-// Test that the user's rewards are transferred to their balance correctly.
+// Test that the user's staker's index and staked tokens are removed from the contract's state.:👍
+// Test that the user's rewards are calculated correctly based on their staker's index and staked tokens.:👍
+// Test that the user's rewards are transferred to their balance correctly. 👍
 // Test that the ReceiveReward message is handled correctly:
 // Test that the user's rewards are calculated correctly based on their staker's index and staked tokens.:👍
 // Test that the user's rewards are transferred to their balance correctly.:👍
