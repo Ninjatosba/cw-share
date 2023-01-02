@@ -4,7 +4,7 @@ use std::fs::create_dir_all;
 use cosmwasm_schema::{export_schema, remove_schemas, schema_for};
 
 use cw_controllers::{Claim, ClaimsResponse};
-use cw_rewarddistrubutor::msg::{
+use cw_share::msg::{
     AccruedRewardsResponse, ExecuteMsg, HolderResponse, HoldersResponse, InstantiateMsg,
     MigrateMsg, QueryMsg, ReceiveMsg, StateResponse,
 };
