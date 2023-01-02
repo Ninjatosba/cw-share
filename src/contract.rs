@@ -56,7 +56,7 @@ pub fn execute(
         ExecuteMsg::BondStake {} => execute_bond(deps, env, info),
         ExecuteMsg::UpdateRewardIndex {} => execute_update_reward_index(deps, env),
         ExecuteMsg::UpdateHoldersReward { address } => {
-            execute_update_stakers_rewards(deps, env, info, address)
+            execute_update_holders_rewards(deps, env, info, address)
         }
         ExecuteMsg::WithdrawStake { amount } => execute_withdraw(deps, env, info, amount),
         ExecuteMsg::ReceiveReward {} => execute_receive_reward(deps, env, info),
@@ -117,7 +117,7 @@ pub fn update_reward_index(
     Ok(claimed_rewards)
 }
 
-pub fn execute_update_stakers_rewards(
+pub fn execute_update_holders_rewards(
     mut deps: DepsMut,
     env: Env,
     info: MessageInfo,
@@ -132,7 +132,7 @@ pub fn execute_update_stakers_rewards(
     //validate address
     let addr = maybe_addr(deps.api, address)?.unwrap_or(info.sender);
     let mut holder = HOLDERS.load(deps.storage, &Addr::unchecked(addr.clone()))?;
-    update_stakers_rewards(deps.branch(), env, &mut holder)?;
+    update_holders_rewards(deps.branch(), env, &mut holder)?;
     HOLDERS.save(deps.storage, &Addr::unchecked(addr), &holder)?;
 
     let res = Response::new()
@@ -143,7 +143,7 @@ pub fn execute_update_stakers_rewards(
     Ok(res)
 }
 
-pub fn update_stakers_rewards(
+pub fn update_holders_rewards(
     mut deps: DepsMut,
     env: Env,
     holder: &mut Holder,
@@ -157,11 +157,12 @@ pub fn update_stakers_rewards(
     let rewards_uint128;
     //index_diff = global_index - holder.index;
     let index_diff: Decimal256 = state.global_index - holder.index;
+    println!("index_diff: {}", index_diff);
+    println!("holder.balance: {}", holder.balance);
     //reward_amount = holder.balance * index_diff + holder.pending_rewards;
     let reward_amount = Decimal256::from_ratio(holder.balance, Uint256::one())
         .checked_mul(index_diff)?
         .checked_add(holder.dec_rewards)?;
-    //
     let decimals = get_decimals(reward_amount)?;
 
     //floor(reward_amount)
@@ -186,7 +187,7 @@ pub fn execute_receive_reward(
     if holder.balance.is_zero() {
         return Err(ContractError::NoBond {});
     }
-    let rewards_uint128 = update_stakers_rewards(deps.branch(), env, &mut holder)?;
+    let rewards_uint128 = update_holders_rewards(deps.branch(), env, &mut holder)?;
 
     HOLDERS.save(
         deps.storage,
@@ -247,12 +248,7 @@ pub fn execute_bond(
             HOLDERS.save(deps.storage, &addr, &holder)?;
         }
         Some(mut holder) => {
-            update_reward_index(&mut state, config, deps.branch(), env.clone())?;
-            if holder.balance.is_zero() {
-                return Err(ContractError::NoBond {});
-            }
-
-            update_stakers_rewards(deps.branch(), env.clone(), &mut holder)?;
+            update_holders_rewards(deps.branch(), env.clone(), &mut holder)?;
             holder.balance += amount;
 
             HOLDERS.save(deps.storage, &addr, &holder)?;
@@ -288,7 +284,7 @@ pub fn execute_withdraw(
         return Err(ContractError::DecreaseAmountExceeds(holder.balance));
     }
 
-    update_stakers_rewards(deps.branch(), env.clone(), &mut holder)?;
+    update_holders_rewards(deps.branch(), env.clone(), &mut holder)?;
     update_reward_index(&mut state, config.clone(), deps.branch(), env.clone())?;
 
     //send rewards and withdraw amount to the holder
@@ -306,9 +302,10 @@ pub fn execute_withdraw(
                 },
             ],
         }))
-        .add_attribute("action", "unbond_stake")
+        .add_attribute("action", "withdraw_stake")
         .add_attribute("holder_address", info.sender.clone())
-        .add_attribute("amount", withdraw_amount);
+        .add_attribute("amount", withdraw_amount)
+        .add_attribute("rewards claimed", holder.pending_rewards);
 
     holder.balance = (holder.balance.checked_sub(withdraw_amount))?;
     state.total_staked = (state.total_staked.checked_sub(withdraw_amount))?;

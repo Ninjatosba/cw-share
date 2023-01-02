@@ -1,10 +1,12 @@
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
     use cosmwasm_std::testing::{
         mock_dependencies, mock_dependencies_with_balance, mock_env, mock_info,
     };
     use cosmwasm_std::{
-        from_binary, Addr, BankMsg, Coin, CosmosMsg, Decimal256, MessageInfo, Uint128,
+        from_binary, Addr, BankMsg, Coin, CosmosMsg, Decimal256, MessageInfo, Uint128, Uint256,
     };
     use cw_utils::PaymentError;
 
@@ -96,7 +98,6 @@ mod tests {
         assert_eq!(config_response.admin, "admin".to_string(),);
     }
 
-    //test_bond
     #[test]
     pub fn test_bond() {
         //instantiate
@@ -199,7 +200,6 @@ mod tests {
         );
     }
 
-    //test execute update reward index
     #[test]
     pub fn test_update_reward_index() {
         let mut deps = mock_dependencies_with_balance(&[]);
@@ -306,7 +306,7 @@ mod tests {
         let config_response: StateResponse = from_binary(&res).unwrap();
         assert_eq!(config_response.prev_reward_balance, Uint128::new(500));
     }
-    //test recieve rewards
+
     #[test]
     pub fn test_recieve_rewards() {
         let mut deps = mock_dependencies_with_balance(&[]);
@@ -408,8 +408,7 @@ mod tests {
     }
 
     #[test]
-    //test execute update holders rewards
-    pub fn test_update_stakers_rewards() {
+    pub fn test_update_holders_rewards() {
         let mut deps = mock_dependencies_with_balance(&[]);
         let init_msg = default_init();
         let env = mock_env();
@@ -422,7 +421,7 @@ mod tests {
         )
         .unwrap();
 
-        //update_holders_rewards by random address
+        //update_stakers_rewards by random address
         let info = mock_info("random", &[]);
         let msg = ExecuteMsg::UpdateHoldersReward { address: None };
         let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
@@ -476,6 +475,10 @@ mod tests {
         .unwrap();
         let holder_response: HolderResponse = from_binary(&res).unwrap();
         assert_eq!(holder_response.pending_rewards, Uint128::new(33));
+        assert_eq!(
+            holder_response.dec_rewards,
+            Decimal256::new(Uint256::from_str("333333333333333300").unwrap())
+        );
 
         //update second stakers rewards
         let info: MessageInfo = mock_info("staker2", &[]);
@@ -496,7 +499,6 @@ mod tests {
         assert_eq!(holder_response.pending_rewards, Uint128::new(66));
     }
 
-    //test withdraw
     #[test]
     pub fn test_withdraw() {
         let mut deps = mock_dependencies_with_balance(&[]);
@@ -563,6 +565,54 @@ mod tests {
                 ],
             }),
         );
+
+        //check state for total staked
+        let res = query(deps.as_mut(), env.clone(), QueryMsg::State {}).unwrap();
+        let state: StateResponse = from_binary(&res).unwrap();
+        assert_eq!(state.total_staked, Uint128::new(200));
+    }
+
+    #[test]
+    pub fn test_update_config() {
+        let mut deps = mock_dependencies_with_balance(&[]);
+        let init_msg = default_init();
+        let env = mock_env();
+
+        instantiate(
+            deps.as_mut(),
+            env.clone(),
+            mock_info("creator", &[]),
+            init_msg,
+        )
+        .unwrap();
+        //random can't update config
+        let info: MessageInfo = mock_info("random", &[]);
+        let msg = ExecuteMsg::UpdateConfig {
+            reward_denom: Some("new_reward_denom".to_string()),
+            staked_token_denom: Some("new_staked_token_denom".to_string()),
+            admin: Some("new_admin".to_string()),
+        };
+        let res = execute(deps.as_mut(), env.clone(), info.clone(), msg).unwrap_err();
+        assert_eq!(res, ContractError::Unauthorized {});
+
+        //creator can update config
+        let info: MessageInfo = mock_info("creator", &[]);
+        let msg = ExecuteMsg::UpdateConfig {
+            reward_denom: Some("new_reward_denom".to_string()),
+            staked_token_denom: Some("new_staked_token_denom".to_string()),
+            admin: Some("new_admin".to_string()),
+        };
+        let _res = execute(deps.as_mut(), env.clone(), info.clone(), msg).unwrap();
+
+        //check config
+        let res = query(deps.as_mut(), env.clone(), QueryMsg::Config {}).unwrap();
+        let config_response: ConfigResponse = from_binary(&res).unwrap();
+        assert_eq!(config_response.admin, "new_admin".to_string());
+        assert_eq!(config_response.reward_denom, "new_reward_denom".to_string());
+        assert_eq!(
+            config_response.staked_token_denom,
+            "new_staked_token_denom".to_string()
+        );
     }
 }
 //Tests
@@ -571,6 +621,8 @@ mod tests {
 // Test that the smart contract's global_index and total_staked are set to 0, and that prev_reward_balance is set to 0.
 // Test the execute() function:👍
 // Test that the BondStake message is handled correctly:
+// Test that the user send funds else return error.👍
+// Test that the user's funds are in correct denom.👍
 // Test that the user's staked tokens are added to the contract's total_staked value.👍
 // Test that the user's staker's index is calculated correctly.👍
 // Test that the user's staker's index and staked tokens are stored in the contract's state.👍
@@ -581,22 +633,22 @@ mod tests {
 // Test that the user's rewards are calculated correctly based on their staker's index and staked tokens.:👍
 // Test that the user's rewards are added to their balance correctly.:👍
 // Test that the WithdrawStake message is handled correctly:
-// Test that the user's staked tokens are removed from the contract's total_staked value.
+// Test that the user's staked tokens are removed from the contract's total_staked value.:👍
 // Test that the user's staker's index and staked tokens are removed from the contract's state.
 // Test that the user's rewards are calculated correctly based on their staker's index and staked tokens.
 // Test that the user's rewards are transferred to their balance correctly.
 // Test that the ReceiveReward message is handled correctly:
-// Test that the user's rewards are calculated correctly based on their staker's index and staked tokens.
-// Test that the user's rewards are transferred to their balance correctly.
+// Test that the user's rewards are calculated correctly based on their staker's index and staked tokens.:👍
+// Test that the user's rewards are transferred to their balance correctly.:👍
 // Test that the UpdateConfig message is handled correctly:
-// Test that the staked_token_denom and reward_denom values are updated correctly.
-// Test that the admin value is updated correctly.
+// Test that the staked_token_denom and reward_denom values are updated correctly.:👍
+// Test that the admin value is updated correctly.:👍
 // Test the query() function:
 // Test that the AccruedRewards query returns the correct accrued rewards for the user.
 // Test that the Holder query returns the correct staker's index and staked tokens for the user.
 // Test that the State query returns the correct values for global_index, total_staked, and prev_reward_balance.
 //Errors
-// NoBond error: This error should be returned if the total_staked value is 0, indicating that there are no bonded tokens. This error could be returned in the execute_update_reward_index() function if the total_staked value is 0.
-// InvalidDenom error: This error should be returned if the input denom is invalid, such as if it is not a recognized token denom. This error could be returned in the execute() function if the input denom is invalid.
+// NoBond error: This error should be returned if the total_staked value is 0, indicating that there are no bonded tokens. This error could be returned in the execute_update_reward_index() function if the total_staked value is 0.:👍
+// InvalidDenom error: This error should be returned if the input denom is invalid, such as if it is not a recognized token denom. This error could be returned in the execute() function if the input denom is invalid.:👍
 // InsufficientFunds error: This error should be returned if the contract does not have sufficient funds to perform the requested action. This error could be returned in the execute_update_holders_rewards() function if the contract does not have enough funds to pay the user their rewards.
 // InvalidAdmin error: This error should be returned if the input admin value is invalid, such as if it is not a recognized address. This error could be returned in the execute_update_config() function if the input admin value is invalid.
