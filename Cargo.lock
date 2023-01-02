@@ -229,7 +229,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "cw-rewarddistrubutor"
+name = "cw-share"
 version = "0.1.1"
 dependencies = [
  "cosmwasm-schema",
