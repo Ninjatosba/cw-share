@@ -23,7 +23,7 @@ pub fn instantiate(
     info: MessageInfo,
     msg: InstantiateMsg,
 ) -> StdResult<Response> {
-    //check if admin is a valid address and if it is, set it to the admin field else set it to the sender
+    //check if admin is a valid address and if it is, set it to the admin field else set it as sender
     let admin = match msg.admin {
         Some(admin) => deps.api.addr_validate(&admin)?,
         None => info.sender.clone(),
