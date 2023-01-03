@@ -185,7 +185,7 @@ pub fn execute_receive_reward(
     if holder.balance.is_zero() {
         return Err(ContractError::NoBond {});
     }
-   update_holders_rewards(deps.branch(), env, &mut holder)?;
+    update_holders_rewards(deps.branch(), env, &mut holder)?;
 
     HOLDERS.save(
         deps.storage,
@@ -194,7 +194,6 @@ pub fn execute_receive_reward(
     )?;
 
     //send rewards to the holder
-
     let send_msg = CosmosMsg::Bank(BankMsg::Send {
         to_address: info.sender.to_string(),
         amount: vec![Coin {
@@ -210,7 +209,7 @@ pub fn execute_receive_reward(
     Ok(Response::new()
         .add_message(send_msg)
         .add_attribute("action", "receive_reward")
-        .add_attribute("rewards", rewards_uint128)
+        .add_attribute("rewards", holder.pending_rewards)
         .add_attribute("holder", info.sender)
         .add_attribute("holder_balance", holder.balance))
 }
