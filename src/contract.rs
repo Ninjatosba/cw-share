@@ -185,7 +185,7 @@ pub fn execute_receive_reward(
     if holder.balance.is_zero() {
         return Err(ContractError::NoBond {});
     }
-    let rewards_uint128 = update_holders_rewards(deps.branch(), env, &mut holder)?;
+   update_holders_rewards(deps.branch(), env, &mut holder)?;
 
     HOLDERS.save(
         deps.storage,
@@ -199,11 +199,11 @@ pub fn execute_receive_reward(
         to_address: info.sender.to_string(),
         amount: vec![Coin {
             denom: config.reward_denom.to_string(),
-            amount: rewards_uint128,
+            amount: holder.pending_rewards,
         }],
     });
 
-    if rewards_uint128.is_zero() {
+    if holder.pending_rewards.is_zero() {
         return Err(ContractError::NoRewards {});
     }
 
