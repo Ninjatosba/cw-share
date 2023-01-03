@@ -155,20 +155,22 @@ pub fn update_holders_rewards(
     update_reward_index(&mut state, config, deps.branch(), env)?;
 
     let rewards_uint128;
+
     //index_diff = global_index - holder.index;
     let index_diff: Decimal256 = state.global_index - holder.index;
+
     //reward_amount = holder.balance * index_diff + holder.pending_rewards;
     let reward_amount = Decimal256::from_ratio(holder.balance, Uint256::one())
         .checked_mul(index_diff)?
         .checked_add(holder.dec_rewards)?;
     let decimals = get_decimals(reward_amount)?;
-    println!("decimals: {}", decimals);
+
     //floor(reward_amount)
     rewards_uint128 = (reward_amount * Uint256::one())
         .try_into()
         .unwrap_or(Uint128::zero());
     holder.dec_rewards = decimals;
-    holder.pending_rewards = rewards_uint128;
+    holder.pending_rewards += rewards_uint128;
     holder.index = state.global_index;
     Ok(rewards_uint128)
 }
@@ -206,6 +208,12 @@ pub fn execute_receive_reward(
         return Err(ContractError::NoRewards {});
     }
 
+    holder.pending_rewards = Uint128::zero();
+    HOLDERS.save(
+        deps.storage,
+        &Addr::unchecked(info.sender.as_str()),
+        &holder,
+    )?;
     Ok(Response::new()
         .add_message(send_msg)
         .add_attribute("action", "receive_reward")
