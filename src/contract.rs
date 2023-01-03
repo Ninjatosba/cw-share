@@ -209,6 +209,7 @@ pub fn execute_receive_reward(
     }
 
     holder.pending_rewards = Uint128::zero();
+
     HOLDERS.save(
         deps.storage,
         &Addr::unchecked(info.sender.as_str()),
@@ -314,6 +315,7 @@ pub fn execute_withdraw(
 
     holder.balance = (holder.balance.checked_sub(withdraw_amount))?;
     state.total_staked = (state.total_staked.checked_sub(withdraw_amount))?;
+    holder.pending_rewards = Uint128::zero();
     STATE.save(deps.storage, &state)?;
     HOLDERS.save(deps.storage, &info.sender, &holder)?;
     Ok(res)

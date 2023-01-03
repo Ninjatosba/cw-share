@@ -260,6 +260,7 @@ mod tests {
         );
         let msg = ExecuteMsg::BondStake {};
         let _res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
+
         //update balance
         deps.querier.update_balance(
             env.contract.address.as_str(),
@@ -302,6 +303,7 @@ mod tests {
                 amount: Uint128::new(300),
             }],
         );
+
         //check global index before update
         let res = query(deps.as_ref(), env.clone(), QueryMsg::State {}).unwrap();
         let config_response: StateResponse = from_binary(&res).unwrap();
@@ -318,6 +320,7 @@ mod tests {
             config_response.global_index,
             Decimal256::from_ratio(Uint128::new(500), Uint128::new(300))
         );
+
         //check prev_reward_balance of state which should be 300 after update
         assert_eq!(config_response.prev_reward_balance, Uint128::new(300));
 
@@ -391,6 +394,7 @@ mod tests {
         let info = mock_info("staker1", &[]);
         let msg = ExecuteMsg::ReceiveReward {};
         let res = execute(deps.as_mut(), env.clone(), info.clone(), msg).unwrap();
+
         //check first creator rewards
         assert_eq!(
             res.messages.get(0).unwrap().msg,
@@ -402,6 +406,12 @@ mod tests {
                 }],
             })
         );
+
+        //fist staker tries to recieve rewards again
+        let info = mock_info("staker1", &[]);
+        let msg = ExecuteMsg::ReceiveReward {};
+        let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
+        assert_eq!(res.unwrap_err(), ContractError::NoRewards {});
 
         //second bond
         let info = mock_info(
@@ -427,11 +437,10 @@ mod tests {
         let msg = ExecuteMsg::UpdateRewardIndex {};
         let _res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
 
-        //first bond recieve rewards again but lower amount
+        //first bond recieve rewards again but recieves less rewards
         let info = mock_info("staker1", &[]);
         let msg = ExecuteMsg::ReceiveReward {};
         let res = execute(deps.as_mut(), env.clone(), info.clone(), msg).unwrap();
-        //check first creator rewards
         assert_eq!(
             res.messages.get(0).unwrap().msg,
             CosmosMsg::Bank(BankMsg::Send {
