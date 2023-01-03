@@ -599,16 +599,20 @@ mod tests {
             res.messages[0].msg,
             CosmosMsg::Bank(BankMsg::Send {
                 to_address: "staker1".to_string(),
-                amount: vec![
-                    Coin {
-                        denom: "rewards".to_string(),
-                        amount: Uint128::new(33),
-                    },
-                    Coin {
-                        denom: "staked".to_string(),
-                        amount: Uint128::new(100),
-                    }
-                ],
+                amount: vec![Coin {
+                    denom: "rewards".to_string(),
+                    amount: Uint128::new(33),
+                }],
+            }),
+        );
+        assert_eq!(
+            res.messages[1].msg,
+            CosmosMsg::Bank(BankMsg::Send {
+                to_address: "staker1".to_string(),
+                amount: vec![Coin {
+                    denom: "staked".to_string(),
+                    amount: Uint128::new(100),
+                }],
             }),
         );
 

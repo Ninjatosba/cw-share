@@ -100,7 +100,6 @@ pub fn update_reward_index(
         .querier
         .query_balance(&env.contract.address, &config.reward_denom)?
         .amount;
-
     if current_balance >= state.prev_reward_balance {
         let previous_balance = state.prev_reward_balance;
         // claimed_rewards = current_balance - prev_balance;
@@ -118,6 +117,8 @@ pub fn update_reward_index(
         STATE.save(deps.storage, &state)?;
         Ok(claimed_rewards)
     } else {
+        //this means that the some users recieved rewards and the contract balance has decreased
+
         state.prev_reward_balance = current_balance;
         STATE.save(deps.storage, &state)?;
         Ok(current_balance)
@@ -304,16 +305,17 @@ pub fn execute_withdraw(
     let res: Response = Response::new()
         .add_message(CosmosMsg::Bank(BankMsg::Send {
             to_address: info.sender.to_string(),
-            amount: vec![
-                Coin {
-                    denom: config.reward_denom.to_string(),
-                    amount: holder.pending_rewards,
-                },
-                Coin {
-                    denom: config.staked_token_denom.to_string(),
-                    amount: withdraw_amount,
-                },
-            ],
+            amount: vec![Coin {
+                denom: config.reward_denom.to_string(),
+                amount: holder.pending_rewards,
+            }],
+        }))
+        .add_message(CosmosMsg::Bank(BankMsg::Send {
+            to_address: info.sender.to_string(),
+            amount: vec![Coin {
+                denom: config.staked_token_denom.to_string(),
+                amount: withdraw_amount,
+            }],
         }))
         .add_attribute("action", "withdraw_stake")
         .add_attribute("holder_address", info.sender.clone())
