@@ -100,21 +100,28 @@ pub fn update_reward_index(
         .querier
         .query_balance(&env.contract.address, &config.reward_denom)?
         .amount;
-    let previous_balance = state.prev_reward_balance;
-    // claimed_rewards = current_balance - prev_balance;
-    let claimed_rewards = current_balance.checked_sub(previous_balance)?;
 
-    state.prev_reward_balance = current_balance;
+    if current_balance >= state.prev_reward_balance {
+        let previous_balance = state.prev_reward_balance;
+        // claimed_rewards = current_balance - prev_balance;
+        let claimed_rewards = current_balance.checked_sub(previous_balance)?;
 
-    // global_index += claimed_rewards / total_balance;
-    if !state.total_staked.is_zero() {
-        state.global_index = state
-            .global_index
-            .add(Decimal256::from_ratio(claimed_rewards, state.total_staked));
+        state.prev_reward_balance = current_balance;
+
+        // global_index += claimed_rewards / total_balance;
+        if !state.total_staked.is_zero() {
+            state.global_index = state
+                .global_index
+                .add(Decimal256::from_ratio(claimed_rewards, state.total_staked));
+        }
+
+        STATE.save(deps.storage, &state)?;
+        Ok(claimed_rewards)
+    } else {
+        state.prev_reward_balance = current_balance;
+        STATE.save(deps.storage, &state)?;
+        Ok(current_balance)
     }
-
-    STATE.save(deps.storage, &state)?;
-    Ok(claimed_rewards)
 }
 
 pub fn execute_update_holders_rewards(
