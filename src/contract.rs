@@ -78,13 +78,12 @@ pub fn execute_update_reward_index(deps: DepsMut, env: Env) -> Result<Response, 
         return Err(ContractError::NoBond {});
     }
 
-    let claimed_rewards = update_reward_index(&mut state, config, deps, env)?;
-
-    // For querying the balance of the contract itself, we can use the querier
+    let (all_rewards, new_claimable_rewards) = update_reward_index(&mut state, config, deps, env)?;
 
     let res = Response::new()
         .add_attribute("action", "update_reward_index")
-        .add_attribute("claimed_rewards", claimed_rewards)
+        .add_attribute("all_rewards", all_rewards)
+        .add_attribute("claimable_rewards", new_claimable_rewards)
         .add_attribute("new_index", state.global_index.to_string());
     Ok(res)
 }
@@ -94,7 +93,7 @@ pub fn update_reward_index(
     config: Config,
     mut deps: DepsMut,
     env: Env,
-) -> Result<Uint128, ContractError> {
+) -> Result<(Uint128, Uint128), ContractError> {
     let current_balance: Uint128 = deps
         .branch()
         .querier
@@ -102,26 +101,28 @@ pub fn update_reward_index(
         .amount;
     if current_balance >= state.prev_reward_balance {
         let previous_balance = state.prev_reward_balance;
-        // claimed_rewards = current_balance - prev_balance;
-        let claimed_rewards = current_balance.checked_sub(previous_balance)?;
+
+        // claimable_rewards = current_balance - prev_balance;
+        let new_claimable_rewards = current_balance.checked_sub(previous_balance)?;
 
         state.prev_reward_balance = current_balance;
 
-        // global_index += claimed_rewards / total_balance;
+        // global_index += claimable_rewards / total_balance;
         if !state.total_staked.is_zero() {
-            state.global_index = state
-                .global_index
-                .add(Decimal256::from_ratio(claimed_rewards, state.total_staked));
+            state.global_index = state.global_index.add(Decimal256::from_ratio(
+                new_claimable_rewards,
+                state.total_staked,
+            ));
         }
 
         STATE.save(deps.storage, &state)?;
-        Ok(claimed_rewards)
+        Ok((current_balance, new_claimable_rewards))
     } else {
         //this means that the some users recieved rewards and the contract balance has decreased
-
         state.prev_reward_balance = current_balance;
         STATE.save(deps.storage, &state)?;
-        Ok(current_balance)
+        let new_claimable_rewards = Uint128::zero();
+        Ok((current_balance, new_claimable_rewards))
     }
 }
 
