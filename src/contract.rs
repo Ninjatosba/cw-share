@@ -132,7 +132,7 @@ pub fn execute_update_holders_rewards(
     info: MessageInfo,
     address: Option<String>,
 ) -> Result<Response, ContractError> {
-    let state = STATE.load(deps.storage)?;
+    let mut state = STATE.load(deps.storage)?;
 
     // Zero staking check
     if state.total_staked.is_zero() {
@@ -141,8 +141,9 @@ pub fn execute_update_holders_rewards(
     //validate address
     let addr = maybe_addr(deps.api, address)?.unwrap_or(info.sender);
     let mut holder = HOLDERS.load(deps.storage, &Addr::unchecked(addr.clone()))?;
-    update_holders_rewards(deps.branch(), env, &mut holder)?;
+    update_holders_rewards(deps.branch(), &mut state, env, &mut holder)?;
     HOLDERS.save(deps.storage, &Addr::unchecked(addr), &holder)?;
+    STATE.save(deps.storage, &state)?;
 
     let res = Response::new()
         .add_attribute("action", "update_reward_index")
@@ -154,14 +155,14 @@ pub fn execute_update_holders_rewards(
 
 pub fn update_holders_rewards(
     mut deps: DepsMut,
+    state: &mut State,
     env: Env,
     holder: &mut Holder,
 ) -> Result<Uint128, ContractError> {
-    let mut state = STATE.load(deps.storage)?;
     let config = CONFIG.load(deps.storage)?;
 
     //update reward index
-    update_reward_index(&mut state, config, deps.branch(), env)?;
+    update_reward_index(state, config, deps.branch(), env)?;
 
     let rewards_uint128;
 
@@ -189,14 +190,14 @@ pub fn execute_receive_reward(
     env: Env,
     info: MessageInfo,
 ) -> Result<Response, ContractError> {
-    let _state = STATE.load(deps.storage)?;
+    let mut state = STATE.load(deps.storage)?;
     let config = CONFIG.load(deps.storage)?;
 
     let mut holder = HOLDERS.load(deps.storage, &Addr::unchecked(info.sender.as_str()))?;
     if holder.balance.is_zero() {
         return Err(ContractError::NoBond {});
     }
-    update_holders_rewards(deps.branch(), env, &mut holder)?;
+    update_holders_rewards(deps.branch(), &mut state, env, &mut holder)?;
 
     HOLDERS.save(
         deps.storage,
@@ -244,10 +245,6 @@ pub fn execute_bond(
     let amount = must_pay(&info, &config.staked_token_denom)?;
     let addr = info.sender;
 
-    if amount.is_zero() {
-        return Err(ContractError::NoFund {});
-    }
-
     let holder = HOLDERS.may_load(deps.storage, &addr)?;
 
     match holder {
@@ -263,7 +260,7 @@ pub fn execute_bond(
             HOLDERS.save(deps.storage, &addr, &holder)?;
         }
         Some(mut holder) => {
-            update_holders_rewards(deps.branch(), env.clone(), &mut holder)?;
+            update_holders_rewards(deps.branch(), &mut state, env, &mut holder)?;
             holder.balance += amount;
 
             HOLDERS.save(deps.storage, &addr, &holder)?;
@@ -299,8 +296,7 @@ pub fn execute_withdraw(
         return Err(ContractError::DecreaseAmountExceeds(holder.balance));
     }
 
-    update_holders_rewards(deps.branch(), env.clone(), &mut holder)?;
-    update_reward_index(&mut state, config.clone(), deps.branch(), env.clone())?;
+    update_holders_rewards(deps.branch(), &mut state, env.clone(), &mut holder)?;
 
     //send rewards and withdraw amount to the holder
     let res: Response = Response::new()
