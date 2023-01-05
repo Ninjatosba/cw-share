@@ -59,16 +59,17 @@ pub enum ReceiveMsg {
 #[serde(rename_all = "snake_case")]
 pub enum QueryMsg {
     State {},
-    AccruedRewards { address: String },
-    Holder { address: String },
+    AccruedRewards {
+        address: String,
+    },
+    Holder {
+        address: String,
+    },
     Config {},
-    // Holders {
-    //     start_after: Option<String>,
-    //     limit: Option<u32>,
-    // },
-    // Claims {
-    //     address: String,
-    // },
+    Holders {
+        start_after: Option<String>,
+        limit: Option<u32>,
+    },
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]

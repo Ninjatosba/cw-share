@@ -1,13 +1,14 @@
 use cosmwasm_std::{
     entry_point, to_binary, Addr, BankMsg, Binary, Coin, CosmosMsg, Decimal256, Deps, DepsMut, Env,
-    MessageInfo, Response, StdError, StdResult, Uint128, Uint256,
+    MessageInfo, Order, Response, StdError, StdResult, Uint128, Uint256,
 };
 use cw0::maybe_addr;
+use cw_storage_plus::Bound;
 use cw_utils::must_pay;
 
 use crate::msg::{
-    AccruedRewardsResponse, ConfigResponse, ExecuteMsg, HolderResponse, InstantiateMsg, MigrateMsg,
-    QueryMsg, StateResponse,
+    AccruedRewardsResponse, ConfigResponse, ExecuteMsg, HolderResponse, HoldersResponse,
+    InstantiateMsg, MigrateMsg, QueryMsg, StateResponse,
 };
 use crate::state::{Config, Holder, State, CONFIG, HOLDERS, STATE};
 use crate::ContractError;
@@ -374,6 +375,9 @@ pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> StdResult<Binary> {
         }
         QueryMsg::Holder { address } => to_binary(&query_holder(env, deps, address)?),
         QueryMsg::Config {} => to_binary(&query_config(deps, env, msg)?),
+        QueryMsg::Holders { start_after, limit } => {
+            to_binary(&query_holders(deps, env, start_after, limit)?)
+        }
     }
 }
 
@@ -434,6 +438,37 @@ pub fn get_decimals(value: Decimal256) -> StdResult<Decimal256> {
         }
         _ => Err(StdError::generic_err("Unexpected number of dots")),
     }
+}
+
+const MAX_LIMIT: u32 = 30;
+const DEFAULT_LIMIT: u32 = 10;
+//query all holders list
+pub fn query_holders(
+    deps: Deps,
+    _env: Env,
+    start_after: Option<String>,
+    limit: Option<u32>,
+) -> StdResult<HoldersResponse> {
+    let addr = maybe_addr(deps.api, start_after)?;
+    let start = addr.as_ref().map(Bound::exclusive);
+    let limit = limit.unwrap_or(DEFAULT_LIMIT).min(MAX_LIMIT) as usize;
+    let holders: StdResult<Vec<HolderResponse>> = HOLDERS
+        .range(deps.storage, start, None, Order::Ascending)
+        .take(limit)
+        .map(|item| {
+            let (addr, holder) = item?;
+            let holder_response = HolderResponse {
+                address: addr.to_string(),
+                balance: holder.balance,
+                index: holder.index,
+                pending_rewards: holder.pending_rewards,
+                dec_rewards: holder.dec_rewards,
+            };
+            Ok(holder_response)
+        })
+        .collect();
+
+    Ok(HoldersResponse { holders: holders? })
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]

@@ -16,24 +16,6 @@ mod tests {
     };
     use crate::ContractError;
 
-    // fn mock_app() -> App {
-    //     App::default()
-    // }
-
-    // pub fn contract_cw20_reward() -> Box<dyn Contract<Empty>> {
-    //     let contract = ContractWrapper::new(execute, instantiate, query);
-    //     Box::new(contract)
-    // }
-
-    // pub fn contract_cw20() -> Box<dyn Contract<Empty>> {
-    //     let contract = ContractWrapper::new(
-    //         cw20_base::contract::execute,
-    //         cw20_base::contract::instantiate,
-    //         cw20_base::contract::query,
-    //     );
-    //     Box::new(contract)
-    // }
-
     fn default_init() -> InstantiateMsg {
         InstantiateMsg {
             staked_token_denom: "staked".to_string(),
@@ -759,7 +741,6 @@ mod tests {
     //     //check state
     //     let res = query(deps.as_ref(), env.clone(), QueryMsg::State {}).unwrap();
     //     let state: StateResponse = from_binary(&res).unwrap();
-    //     println!("state: {:?}", state);
 
     //     //check staker1
     //     let res = query(
@@ -772,7 +753,6 @@ mod tests {
     //     .unwrap();
 
     //     let holder: HolderResponse = from_binary(&res).unwrap();
-    //     println!("holder: {:?}", holder);
 
     //     //check staker2
     //     let res = query(
@@ -785,7 +765,6 @@ mod tests {
     //     .unwrap();
 
     //     let holder: HolderResponse = from_binary(&res).unwrap();
-    //     println!("holder2: {:?}", holder);
 
     //     //check staker3
     //     let res = query(
@@ -798,7 +777,6 @@ mod tests {
     //     .unwrap();
 
     //     let holder: HolderResponse = from_binary(&res).unwrap();
-    //     println!("holder3: {:?}", holder);
 
     //     //check staker4
     //     let res = query(
@@ -811,13 +789,12 @@ mod tests {
     //     .unwrap();
 
     //     let holder: HolderResponse = from_binary(&res).unwrap();
-    //     println!("holder4: {:?}", holder);
 
     //     //staker1 recieves reward
     //     let info: MessageInfo = mock_info("staker1", &[]);
     //     let msg = ExecuteMsg::ReceiveReward {};
     //     let _res = execute(deps.as_mut(), env.clone(), info.clone(), msg).unwrap();
-    //     println!("staker1 rewards res:: {:?}", _res);
+
     //     //update reward index
     //     let info: MessageInfo = mock_info("staker1", &[]);
     //     let msg = ExecuteMsg::UpdateRewardIndex {};
@@ -826,7 +803,6 @@ mod tests {
     //     //check state
     //     let res = query(deps.as_ref(), env.clone(), QueryMsg::State {}).unwrap();
     //     let state: StateResponse = from_binary(&res).unwrap();
-    //     println!("state: {:?}", state);
 
     //     //check staker1
     //     let res = query(
@@ -839,7 +815,6 @@ mod tests {
     //     .unwrap();
 
     //     let holder: HolderResponse = from_binary(&res).unwrap();
-    //     println!("holder1: {:?}", holder);
 
     //     //update balance
     //     deps.querier.update_balance(
@@ -888,7 +863,6 @@ mod tests {
     //     .unwrap();
 
     //     let holder: HolderResponse = from_binary(&res).unwrap();
-    //     println!("holder5: {:?}", holder);
 
     //     //staker6 updates reward
     //     let info: MessageInfo = mock_info("staker6", &[]);
@@ -906,18 +880,15 @@ mod tests {
     //     .unwrap();
 
     //     let holder: HolderResponse = from_binary(&res).unwrap();
-    //     println!("holder6: {:?}", holder);
 
     //     //check state
     //     let res = query(deps.as_ref(), env.clone(), QueryMsg::State {}).unwrap();
     //     let state: StateResponse = from_binary(&res).unwrap();
-    //     println!("state: {:?}", state);
 
     //     //staker2 recieves reward
     //     let info: MessageInfo = mock_info("staker2", &[]);
     //     let msg = ExecuteMsg::ReceiveReward {};
     //     let _res = execute(deps.as_mut(), env.clone(), info.clone(), msg).unwrap();
-    //     println!("staker2 rewards res: {:?}", _res);
 
     //     //check staker 2
     //     let res = query(
@@ -930,6 +901,17 @@ mod tests {
     //     .unwrap();
 
     //     let holder: HolderResponse = from_binary(&res).unwrap();
-    //     println!("holder2: {:?}", holder);
+
+    //     //query all holders
+    //     let res = query(
+    //         deps.as_ref(),
+    //         env.clone(),
+    //         QueryMsg::Holders {
+    //             start_after: None,
+    //             limit: None,
+    //         },
+    //     )
+    //     .unwrap();
+    //     let holders: HoldersResponse = from_binary(&res).unwrap();
     // }
 }
