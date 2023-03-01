@@ -33,8 +33,6 @@ pub enum ExecuteMsg {
     WithdrawStake {
         amount: Option<Uint128>,
     },
-
-    /// This accepts a properly-encoded ReceiveMsg from a cw20 contract
     ReceiveReward {},
 
     //Update config

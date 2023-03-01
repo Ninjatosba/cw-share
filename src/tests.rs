@@ -12,7 +12,8 @@ mod tests {
 
     use crate::contract::{execute, instantiate, query};
     use crate::msg::{
-        ConfigResponse, ExecuteMsg, HolderResponse, InstantiateMsg, QueryMsg, StateResponse,
+        ConfigResponse, ExecuteMsg, HolderResponse, HoldersResponse, InstantiateMsg, QueryMsg,
+        StateResponse,
     };
     use crate::ContractError;
 
@@ -653,265 +654,101 @@ mod tests {
         );
     }
 
-    // #[test]
-    // pub fn test_case_1() {
-    //     let mut deps = mock_dependencies_with_balance(&[]);
-    //     let init_msg = default_init();
-    //     let env = mock_env();
+    #[test]
+    pub fn test_case_1() {
+        // stake_denom : SS
+        // reward_denom : osmo
+        // Scenario 1
+        // 1. Staker1 stakes 100 SS
+        // Contract recieves 1000 rewards
+        // Staker2 stakes 200 SS
+        // Contract balance is 1000 osmo and 300 SS
+        // Staker1 claims 1000 osmo
+        // Contract balance is 0 osmo and 300 SS
+        // Contract recieves 100 rewards
+        // Contract balance is 100 osmo and 300 SS
 
-    //     instantiate(
-    //         deps.as_mut(),
-    //         env.clone(),
-    //         mock_info("creator", &[]),
-    //         init_msg,
-    //     )
-    //     .unwrap();
+        let mut deps = mock_dependencies_with_balance(&[]);
+        let init_msg = default_init();
+        let env = mock_env();
 
-    //     //first bond
-    //     let info = mock_info(
-    //         "staker1",
-    //         &vec![Coin {
-    //             denom: "staked".to_string(),
-    //             amount: Uint128::new(10),
-    //         }],
-    //     );
+        instantiate(
+            deps.as_mut(),
+            env.clone(),
+            mock_info("creator", &[]),
+            init_msg,
+        )
+        .unwrap();
 
-    //     let msg = ExecuteMsg::BondStake {};
-    //     let _res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
+        // first bond
+        let info = mock_info(
+            "staker1",
+            &vec![Coin {
+                denom: "staked".to_string(),
+                amount: Uint128::new(100),
+            }],
+        );
 
-    //     //update balance
-    //     deps.querier.update_balance(
-    //         env.contract.address.as_str(),
-    //         vec![Coin {
-    //             denom: "rewards".to_string(),
-    //             amount: Uint128::new(100),
-    //         }],
-    //     );
+        let msg = ExecuteMsg::BondStake {};
+        let _res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
 
-    //     //second bond
-    //     let info = mock_info(
-    //         "staker2",
-    //         &vec![Coin {
-    //             denom: "staked".to_string(),
-    //             amount: Uint128::new(20),
-    //         }],
-    //     );
-    //     let msg = ExecuteMsg::BondStake {};
-    //     let _res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
+        //update balance
+        deps.querier.update_balance(
+            env.contract.address.as_str(),
+            vec![Coin {
+                denom: "rewards".to_string(),
+                amount: Uint128::new(1000),
+            }],
+        );
 
-    //     //third bond
-    //     let info = mock_info(
-    //         "staker3",
-    //         &vec![Coin {
-    //             denom: "staked".to_string(),
-    //             amount: Uint128::new(30),
-    //         }],
-    //     );
-    //     let msg = ExecuteMsg::BondStake {};
-    //     let _res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
+        //second bond
+        let info = mock_info(
+            "staker2",
+            &vec![Coin {
+                denom: "staked".to_string(),
+                amount: Uint128::new(200),
+            }],
+        );
+        let msg = ExecuteMsg::BondStake {};
+        let _res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
 
-    //     //fourth bond
-    //     let info = mock_info(
-    //         "staker4",
-    //         &vec![Coin {
-    //             denom: "staked".to_string(),
-    //             amount: Uint128::new(40),
-    //         }],
-    //     );
-    //     let msg = ExecuteMsg::BondStake {};
-    //     let _res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
+        // staker 1 claims rewards
+        let info: MessageInfo = mock_info("staker1", &[]);
+        let msg = ExecuteMsg::ReceiveReward {};
+        let res = execute(deps.as_mut(), env.clone(), info.clone(), msg).unwrap();
+        assert_eq!(
+            res.messages[0].msg,
+            CosmosMsg::Bank(BankMsg::Send {
+                to_address: "staker1".to_string(),
+                amount: vec![Coin {
+                    denom: "rewards".to_string(),
+                    amount: Uint128::new(1000),
+                }],
+            }),
+        );
 
-    //     //every staker updates their reward
-    //     let info: MessageInfo = mock_info("staker1", &[]);
-    //     let msg = ExecuteMsg::UpdateHoldersReward { address: None };
-    //     let _res = execute(deps.as_mut(), env.clone(), info.clone(), msg).unwrap();
+        //update balance
+        deps.querier.update_balance(
+            env.contract.address.as_str(),
+            vec![Coin {
+                denom: "rewards".to_string(),
+                amount: Uint128::new(100),
+            }],
+        );
 
-    //     let info: MessageInfo = mock_info("staker2", &[]);
-    //     let msg = ExecuteMsg::UpdateHoldersReward { address: None };
-    //     let _res = execute(deps.as_mut(), env.clone(), info.clone(), msg).unwrap();
-
-    //     let info: MessageInfo = mock_info("staker3", &[]);
-    //     let msg = ExecuteMsg::UpdateHoldersReward { address: None };
-    //     let _res = execute(deps.as_mut(), env.clone(), info.clone(), msg).unwrap();
-
-    //     let info: MessageInfo = mock_info("staker4", &[]);
-    //     let msg = ExecuteMsg::UpdateHoldersReward { address: None };
-    //     let _res = execute(deps.as_mut(), env.clone(), info.clone(), msg).unwrap();
-
-    //     //check state
-    //     let res = query(deps.as_ref(), env.clone(), QueryMsg::State {}).unwrap();
-    //     let state: StateResponse = from_binary(&res).unwrap();
-
-    //     //check staker1
-    //     let res = query(
-    //         deps.as_ref(),
-    //         env.clone(),
-    //         QueryMsg::Holder {
-    //             address: "staker1".to_string(),
-    //         },
-    //     )
-    //     .unwrap();
-
-    //     let holder: HolderResponse = from_binary(&res).unwrap();
-
-    //     //check staker2
-    //     let res = query(
-    //         deps.as_ref(),
-    //         env.clone(),
-    //         QueryMsg::Holder {
-    //             address: "staker2".to_string(),
-    //         },
-    //     )
-    //     .unwrap();
-
-    //     let holder: HolderResponse = from_binary(&res).unwrap();
-
-    //     //check staker3
-    //     let res = query(
-    //         deps.as_ref(),
-    //         env.clone(),
-    //         QueryMsg::Holder {
-    //             address: "staker3".to_string(),
-    //         },
-    //     )
-    //     .unwrap();
-
-    //     let holder: HolderResponse = from_binary(&res).unwrap();
-
-    //     //check staker4
-    //     let res = query(
-    //         deps.as_ref(),
-    //         env.clone(),
-    //         QueryMsg::Holder {
-    //             address: "staker4".to_string(),
-    //         },
-    //     )
-    //     .unwrap();
-
-    //     let holder: HolderResponse = from_binary(&res).unwrap();
-
-    //     //staker1 recieves reward
-    //     let info: MessageInfo = mock_info("staker1", &[]);
-    //     let msg = ExecuteMsg::ReceiveReward {};
-    //     let _res = execute(deps.as_mut(), env.clone(), info.clone(), msg).unwrap();
-
-    //     //update reward index
-    //     let info: MessageInfo = mock_info("staker1", &[]);
-    //     let msg = ExecuteMsg::UpdateRewardIndex {};
-    //     let _res = execute(deps.as_mut(), env.clone(), info.clone(), msg).unwrap();
-
-    //     //check state
-    //     let res = query(deps.as_ref(), env.clone(), QueryMsg::State {}).unwrap();
-    //     let state: StateResponse = from_binary(&res).unwrap();
-
-    //     //check staker1
-    //     let res = query(
-    //         deps.as_ref(),
-    //         env.clone(),
-    //         QueryMsg::Holder {
-    //             address: "staker1".to_string(),
-    //         },
-    //     )
-    //     .unwrap();
-
-    //     let holder: HolderResponse = from_binary(&res).unwrap();
-
-    //     //update balance
-    //     deps.querier.update_balance(
-    //         env.contract.address.as_str(),
-    //         vec![Coin {
-    //             denom: "rewards".to_string(),
-    //             amount: Uint128::new(200),
-    //         }],
-    //     );
-
-    //     //staker5 bonds
-    //     let info = mock_info(
-    //         "staker5",
-    //         &vec![Coin {
-    //             denom: "staked".to_string(),
-    //             amount: Uint128::new(50),
-    //         }],
-    //     );
-    //     let msg = ExecuteMsg::BondStake {};
-    //     let _res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
-
-    //     //staker6 bonds
-    //     let info = mock_info(
-    //         "staker6",
-    //         &vec![Coin {
-    //             denom: "staked".to_string(),
-    //             amount: Uint128::new(60),
-    //         }],
-    //     );
-    //     let msg = ExecuteMsg::BondStake {};
-    //     let _res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
-
-    //     //staker5 updates reward
-    //     let info: MessageInfo = mock_info("staker5", &[]);
-    //     let msg = ExecuteMsg::UpdateHoldersReward { address: None };
-    //     let _res = execute(deps.as_mut(), env.clone(), info.clone(), msg).unwrap();
-
-    //     //query staker5
-    //     let res = query(
-    //         deps.as_ref(),
-    //         env.clone(),
-    //         QueryMsg::Holder {
-    //             address: "staker5".to_string(),
-    //         },
-    //     )
-    //     .unwrap();
-
-    //     let holder: HolderResponse = from_binary(&res).unwrap();
-
-    //     //staker6 updates reward
-    //     let info: MessageInfo = mock_info("staker6", &[]);
-    //     let msg = ExecuteMsg::UpdateHoldersReward { address: None };
-    //     let _res = execute(deps.as_mut(), env.clone(), info.clone(), msg).unwrap();
-
-    //     //query staker6
-    //     let res = query(
-    //         deps.as_ref(),
-    //         env.clone(),
-    //         QueryMsg::Holder {
-    //             address: "staker6".to_string(),
-    //         },
-    //     )
-    //     .unwrap();
-
-    //     let holder: HolderResponse = from_binary(&res).unwrap();
-
-    //     //check state
-    //     let res = query(deps.as_ref(), env.clone(), QueryMsg::State {}).unwrap();
-    //     let state: StateResponse = from_binary(&res).unwrap();
-
-    //     //staker2 recieves reward
-    //     let info: MessageInfo = mock_info("staker2", &[]);
-    //     let msg = ExecuteMsg::ReceiveReward {};
-    //     let _res = execute(deps.as_mut(), env.clone(), info.clone(), msg).unwrap();
-
-    //     //check staker 2
-    //     let res = query(
-    //         deps.as_ref(),
-    //         env.clone(),
-    //         QueryMsg::Holder {
-    //             address: "staker2".to_string(),
-    //         },
-    //     )
-    //     .unwrap();
-
-    //     let holder: HolderResponse = from_binary(&res).unwrap();
-
-    //     //query all holders
-    //     let res = query(
-    //         deps.as_ref(),
-    //         env.clone(),
-    //         QueryMsg::Holders {
-    //             start_after: None,
-    //             limit: None,
-    //         },
-    //     )
-    //     .unwrap();
-    //     let holders: HoldersResponse = from_binary(&res).unwrap();
-    // }
+        // staker 2 claims rewards
+        let info: MessageInfo = mock_info("staker2", &[]);
+        let msg = ExecuteMsg::ReceiveReward {};
+        let res = execute(deps.as_mut(), env.clone(), info.clone(), msg).unwrap();
+        assert_eq!(
+            res.messages[0].msg,
+            CosmosMsg::Bank(BankMsg::Send {
+                to_address: "staker2".to_string(),
+                amount: vec![Coin {
+                    denom: "rewards".to_string(),
+                    amount: Uint128::new(66),
+                }],
+            }),
+        );
+    }
 }

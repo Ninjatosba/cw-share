@@ -28,9 +28,6 @@ pub enum ContractError {
     #[error("Decrease amount exceeds user balance: {0}")]
     DecreaseAmountExceeds(Uint128),
 
-    #[error("Wait for the unbonding")]
-    WaitUnbonding {},
-
     #[error("No bond")]
     NoBond {},
 
@@ -39,4 +36,7 @@ pub enum ContractError {
 
     #[error("Address validation failed")]
     InvalidAddress {},
+
+    #[error("Stake denom and reward denom cannot be same")]
+    SameDenom {},
 }
