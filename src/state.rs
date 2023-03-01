@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 pub struct State {
     pub global_index: Decimal256,
     pub total_staked: Uint128,
-    pub prev_reward_balance: Uint128,
+    pub total_rewards: Uint128,
     pub rewards_claimed: Uint128,
 }
 pub const STATE: Item<State> = Item::new("state");

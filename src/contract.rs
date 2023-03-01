@@ -40,13 +40,16 @@ pub fn instantiate(
         reward_denom: msg.reward_denom,
         admin: admin,
     };
+
     let state = State {
         global_index: Decimal256::zero(),
         total_staked: Uint128::zero(),
-        prev_reward_balance: Uint128::zero(),
+        total_rewards: Uint128::zero(),
         rewards_claimed: Uint128::zero(),
     };
+
     CONFIG.save(deps.storage, &config)?;
+
     STATE.save(deps.storage, &state)?;
 
     Ok(Response::default())
@@ -60,76 +63,45 @@ pub fn execute(
     msg: ExecuteMsg,
 ) -> Result<Response, ContractError> {
     match msg {
+        ExecuteMsg::UpdateReward {} => execute_update_reward(deps, env, info),
         ExecuteMsg::BondStake {} => execute_bond(deps, env, info),
-        ExecuteMsg::UpdateRewardIndex {} => execute_update_reward_index(deps, env),
-        ExecuteMsg::UpdateHoldersReward { address } => {
-            execute_update_holders_rewards(deps, env, info, address)
+        ExecuteMsg::UpdateHolderReward { address } => {
+            execute_update_holder_rewards(deps, env, info, address)
         }
         ExecuteMsg::WithdrawStake { amount } => execute_withdraw(deps, env, info, amount),
         ExecuteMsg::ReceiveReward {} => execute_receive_reward(deps, env, info),
-        ExecuteMsg::UpdateConfig {
-            staked_token_denom,
-            reward_denom,
-            admin,
-        } => execute_update_config(deps, env, info, staked_token_denom, reward_denom, admin),
+        ExecuteMsg::AdminWithdrawAll {} => execute_admin_withdraw_all(deps, env, info),
     }
 }
 
-/// Increase global_index according to claimed rewards amount
-pub fn execute_update_reward_index(deps: DepsMut, env: Env) -> Result<Response, ContractError> {
+pub fn execute_update_reward(
+    deps: DepsMut,
+    env: Env,
+    info: MessageInfo,
+) -> Result<Response, ContractError> {
     let mut state = STATE.load(deps.storage)?;
+
     let config = CONFIG.load(deps.storage)?;
 
-    // Zero staking check
-    if state.total_staked.is_zero() {
-        return Err(ContractError::NoBond {});
-    }
+    // Check funds
+    let amount = must_pay(&info, &config.reward_denom)?;
 
-    let (all_rewards, new_claimable_rewards) = update_reward_index(&mut state, config, deps, env)?;
+    // update index
+    state.global_index = state
+        .global_index
+        .checked_add(Decimal256::from_ratio(amount, state.total_staked))?;
+
+    state.total_rewards = state.total_rewards.add(amount);
+
+    STATE.save(deps.storage, &state)?;
 
     let res = Response::new()
-        .add_attribute("action", "update_reward_index")
-        .add_attribute("all_rewards", all_rewards)
-        .add_attribute("claimable_rewards", new_claimable_rewards)
-        .add_attribute("new_index", state.global_index.to_string());
+        .add_attribute("action", "update_reward")
+        .add_attribute("reward", amount.to_string());
     Ok(res)
 }
 
-pub fn update_reward_index(
-    state: &mut State,
-    config: Config,
-    mut deps: DepsMut,
-    env: Env,
-) -> Result<(Uint128, Uint128), ContractError> {
-    let current_balance: Uint128 = deps
-        .branch()
-        .querier
-        .query_balance(&env.contract.address, &config.reward_denom)?
-        .amount;
-    println!("current_balance: {}", current_balance);
-    // total_rewards is the rewards that have been claimed + the rewards that are currently in the contract
-    let total_rewards = current_balance.checked_add(state.rewards_claimed)?;
-
-    println!("total_rewards: {}", total_rewards);
-    let previous_balance = state.prev_reward_balance;
-
-    let new_claimable_rewards = total_rewards.checked_sub(previous_balance)?;
-
-    state.prev_reward_balance = total_rewards;
-
-    // global_index += claimable_rewards / total_balance;
-    if !state.total_staked.is_zero() {
-        state.global_index = state.global_index.add(Decimal256::from_ratio(
-            new_claimable_rewards,
-            state.total_staked,
-        ));
-    }
-
-    STATE.save(deps.storage, &state)?;
-    Ok((current_balance, new_claimable_rewards))
-}
-
-pub fn execute_update_holders_rewards(
+pub fn execute_update_holder_rewards(
     mut deps: DepsMut,
     env: Env,
     info: MessageInfo,
@@ -143,8 +115,8 @@ pub fn execute_update_holders_rewards(
     }
     //validate address
     let addr = maybe_addr(deps.api, address)?.unwrap_or(info.sender);
-    let mut holder = HOLDERS.load(deps.storage, &Addr::unchecked(addr.clone()))?;
-    update_holders_rewards(deps.branch(), &mut state, env, &mut holder)?;
+    let mut holder = HOLDERS.load(deps.storage, &addr)?;
+    update_holder_rewards(deps.branch(), &mut state, env, &mut holder)?;
     HOLDERS.save(deps.storage, &Addr::unchecked(addr), &holder)?;
     STATE.save(deps.storage, &state)?;
 
@@ -156,16 +128,13 @@ pub fn execute_update_holders_rewards(
     Ok(res)
 }
 
-pub fn update_holders_rewards(
+pub fn update_holder_rewards(
     mut deps: DepsMut,
     state: &mut State,
     env: Env,
     holder: &mut Holder,
 ) -> Result<Uint128, ContractError> {
     let config = CONFIG.load(deps.storage)?;
-
-    //update reward index
-    update_reward_index(state, config, deps.branch(), env)?;
 
     let rewards_uint128;
 
@@ -206,7 +175,7 @@ pub fn execute_receive_reward(
         return Err(ContractError::NoBond {});
     }
 
-    update_holders_rewards(deps.branch(), &mut state, env, &mut holder)?;
+    update_holder_rewards(deps.branch(), &mut state, env, &mut holder)?;
 
     if holder.pending_rewards.is_zero() {
         return Err(ContractError::NoRewards {});
@@ -250,7 +219,6 @@ pub fn execute_bond(
 
     match holder {
         None => {
-            update_reward_index(&mut state, config, deps.branch(), env)?;
             let holder = Holder::new(
                 amount,
                 state.global_index,
@@ -261,7 +229,7 @@ pub fn execute_bond(
             HOLDERS.save(deps.storage, &addr, &holder)?;
         }
         Some(mut holder) => {
-            update_holders_rewards(deps.branch(), &mut state, env, &mut holder)?;
+            update_holder_rewards(deps.branch(), &mut state, env, &mut holder)?;
             holder.balance += amount;
 
             HOLDERS.save(deps.storage, &addr, &holder)?;
@@ -297,7 +265,7 @@ pub fn execute_withdraw(
         return Err(ContractError::DecreaseAmountExceeds(holder.balance));
     }
 
-    update_holders_rewards(deps.branch(), &mut state, env.clone(), &mut holder)?;
+    update_holder_rewards(deps.branch(), &mut state, env.clone(), &mut holder)?;
 
     //send rewards and withdraw amount to the holder
     let res: Response = Response::new()
@@ -328,41 +296,29 @@ pub fn execute_withdraw(
     Ok(res)
 }
 
-//update config
-pub fn execute_update_config(
-    deps: DepsMut,
-    _env: Env,
+pub fn execute_admin_withdraw_all(
+    mut deps: DepsMut,
+    env: Env,
     info: MessageInfo,
-    staked_token_denom: Option<String>,
-    reward_denom: Option<String>,
-    admin: Option<String>,
 ) -> Result<Response, ContractError> {
-    let old_config: Config = CONFIG.load(deps.storage)?;
+    let config = CONFIG.load(deps.storage)?;
 
-    //check if admin is an valid address and set admin
-    let admin = match admin {
-        Some(admin) => deps.api.addr_validate(&admin)?,
-        None => old_config.clone().admin,
-    };
-
-    if info.sender != old_config.clone().admin {
+    if info.sender != config.admin {
         return Err(ContractError::Unauthorized {});
-    };
-
-    let config = Config {
-        staked_token_denom: staked_token_denom.unwrap_or(old_config.staked_token_denom),
-        reward_denom: reward_denom.unwrap_or(old_config.reward_denom),
-        admin,
-    };
-
-    CONFIG.save(deps.storage, &config)?;
+    }
+    // all tokens
+    let all_tokens = deps
+        .branch()
+        .querier
+        .query_all_balances(&env.contract.address)?;
 
     let res = Response::new()
-        .add_attribute("action", "update_config")
-        .add_attribute("staked_token_denom", config.staked_token_denom)
-        .add_attribute("reward_denom", config.reward_denom)
-        .add_attribute("admin", config.admin);
-
+        .add_message(CosmosMsg::Bank(BankMsg::Send {
+            to_address: info.sender.to_string(),
+            amount: all_tokens,
+        }))
+        .add_attribute("action", "admin_withdraw_all")
+        .add_attribute("admin_address", info.sender.clone());
     Ok(res)
 }
 
@@ -387,7 +343,8 @@ pub fn query_state(deps: Deps, _env: Env, _msg: QueryMsg) -> StdResult<StateResp
     Ok(StateResponse {
         total_staked: state.total_staked,
         global_index: state.global_index,
-        prev_reward_balance: state.prev_reward_balance,
+        total_rewards: state.total_rewards,
+        rewards_claimed: state.rewards_claimed,
     })
 }
 
