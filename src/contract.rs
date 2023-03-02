@@ -85,6 +85,12 @@ pub fn execute_update_reward(
 
     // Check funds
     let amount = must_pay(&info, &config.reward_denom)?;
+    /*  Zero staking check. This can be removed because this contract will be called by Stream Swap conract.
+     So this error will be thrown to Stream creator. But if that happens we can quickly change the fee_collector to multisig
+    while fixing the issue. */
+    if state.total_staked.is_zero() {
+        return Err(ContractError::NoBond {});
+    }
 
     // update index
     state.global_index = state
@@ -109,10 +115,6 @@ pub fn execute_update_holder_rewards(
 ) -> Result<Response, ContractError> {
     let mut state = STATE.load(deps.storage)?;
 
-    // Zero staking check
-    if state.total_staked.is_zero() {
-        return Err(ContractError::NoBond {});
-    }
     //validate address
     let addr = maybe_addr(deps.api, address)?.unwrap_or(info.sender);
     let mut holder = HOLDERS.load(deps.storage, &addr)?;
@@ -167,13 +169,10 @@ pub fn execute_receive_reward(
     info: MessageInfo,
 ) -> Result<Response, ContractError> {
     let mut state = STATE.load(deps.storage)?;
+
     let config = CONFIG.load(deps.storage)?;
 
     let mut holder = HOLDERS.load(deps.storage, &info.sender)?;
-
-    if holder.balance.is_zero() {
-        return Err(ContractError::NoBond {});
-    }
 
     update_holder_rewards(deps.branch(), &mut state, env, &mut holder)?;
 
@@ -291,6 +290,11 @@ pub fn execute_withdraw(
     holder.balance = (holder.balance.checked_sub(withdraw_amount))?;
     state.total_staked = (state.total_staked.checked_sub(withdraw_amount))?;
     holder.pending_rewards = Uint128::zero();
+    if holder.balance.is_zero() {
+        HOLDERS.remove(deps.storage, &info.sender);
+    } else {
+        HOLDERS.save(deps.storage, &info.sender, &holder)?;
+    }
     STATE.save(deps.storage, &state)?;
     HOLDERS.save(deps.storage, &info.sender, &holder)?;
     Ok(res)
