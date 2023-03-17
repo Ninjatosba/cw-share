@@ -781,6 +781,11 @@ mod tests {
         let msg = ExecuteMsg::BondStake {};
         let _res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
 
+        // check state
+        let res = query(deps.as_ref(), env.clone(), QueryMsg::State {}).unwrap();
+        let state: StateResponse = from_binary(&res).unwrap();
+        assert_eq!(state.total_staked, Uint128::new(100));
+        
         // update reward
         let info = mock_info(
             "creator",

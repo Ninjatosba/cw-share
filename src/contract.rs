@@ -344,6 +344,7 @@ pub fn execute_admin_withdraw_all(
         .querier
         .query_all_balances(&env.contract.address)?;
 
+
     let res = Response::new()
         .add_message(CosmosMsg::Bank(BankMsg::Send {
             to_address: info.sender.to_string(),
