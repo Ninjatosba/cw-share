@@ -13,36 +13,18 @@ pub struct InstantiateMsg {
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ExecuteMsg {
-    ////////////////////
-    /// Owner's operations
-    ///////////////////
+    UpdateReward {},
 
-    /// Update the reward index
-    UpdateRewardIndex {},
-
-    UpdateHoldersReward {
-        address: Option<String>,
-    },
-    ////////////////////
-    /// Staking operations
-    ///////////////////
+    UpdateHolderReward { address: Option<String> },
     BondStake {},
-    /// Unbound user staking balance
-    /// Withdraw rewards to pending rewards
-    /// Set current reward index to global index
-    WithdrawStake {
-        amount: Option<Uint128>,
-    },
 
-    /// This accepts a properly-encoded ReceiveMsg from a cw20 contract
+    WithdrawStake { amount: Option<Uint128> },
+
     ReceiveReward {},
 
-    //Update config
-    UpdateConfig {
-        staked_token_denom: Option<String>,
-        reward_denom: Option<String>,
-        admin: Option<String>,
-    },
+    AdminWithdrawAll {},
+
+    UpdateAdmin{address: String},
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
@@ -76,7 +58,8 @@ pub enum QueryMsg {
 pub struct StateResponse {
     pub global_index: Decimal256,
     pub total_staked: Uint128,
-    pub prev_reward_balance: Uint128,
+    pub total_rewards: Uint128,
+    pub rewards_claimed: Uint128,
 }
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct ConfigResponse {
