@@ -1,4 +1,4 @@
-use cosmwasm_std::{OverflowError, StdError, Uint128};
+use cosmwasm_std::{ConversionOverflowError, OverflowError, StdError, Uint128};
 use cw_utils::PaymentError;
 use thiserror::Error;
 
@@ -12,6 +12,9 @@ pub enum ContractError {
 
     #[error("{0}")]
     Payment(#[from] PaymentError),
+
+    #[error("{0}")]
+    ConversionOverflowError(#[from] ConversionOverflowError),
 
     #[error("No rewards accrued")]
     NoRewards {},

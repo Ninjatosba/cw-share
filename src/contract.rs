@@ -4,7 +4,7 @@ use cosmwasm_std::{
 };
 use cw0::maybe_addr;
 use cw_storage_plus::Bound;
-use cw_utils::must_pay;
+use cw_utils::{must_pay, nonpayable};
 
 use crate::msg::{
     AccruedRewardsResponse, ConfigResponse, ExecuteMsg, HolderResponse, HoldersResponse,
@@ -23,18 +23,17 @@ pub fn instantiate(
     _env: Env,
     info: MessageInfo,
     msg: InstantiateMsg,
-) -> StdResult<Response> {
+) -> Result<Response, ContractError> {
+    nonpayable(&info)?;
     //check if admin is a valid address and if it is, set it to the admin field else set it as sender
-    let admin = match msg.admin {
-        Some(admin) => deps.api.addr_validate(&admin)?,
-        None => info.sender.clone(),
-    };
+    let admin = maybe_addr(deps.api, msg.admin)?.unwrap_or(info.sender);
 
     let config: Config = Config {
         staked_token_denom: msg.staked_token_denom,
         reward_denom: msg.reward_denom,
         admin: admin,
     };
+
     let state = State {
         global_index: Decimal256::zero(),
         total_staked: Uint128::zero(),
@@ -100,31 +99,25 @@ pub fn update_reward_index(
         .querier
         .query_balance(&env.contract.address, &config.reward_denom)?
         .amount;
-    if current_balance >= state.prev_reward_balance {
-        let previous_balance = state.prev_reward_balance;
 
-        // claimable_rewards = current_balance - prev_balance;
-        let new_claimable_rewards = current_balance.checked_sub(previous_balance)?;
+    let previous_balance = state.prev_reward_balance;
 
-        state.prev_reward_balance = current_balance;
+    // claimable_rewards = current_balance - prev_balance;
+    let new_claimable_rewards = current_balance.checked_sub(previous_balance)?;
 
-        // global_index += claimable_rewards / total_balance;
-        if !state.total_staked.is_zero() {
-            state.global_index = state.global_index.add(Decimal256::from_ratio(
-                new_claimable_rewards,
-                state.total_staked,
-            ));
-        }
+    state.prev_reward_balance = current_balance;
 
-        STATE.save(deps.storage, &state)?;
-        Ok((current_balance, new_claimable_rewards))
-    } else {
-        //this means that the some users recieved rewards and the contract balance has decreased
-        state.prev_reward_balance = current_balance;
-        STATE.save(deps.storage, &state)?;
-        let new_claimable_rewards = Uint128::zero();
-        Ok((current_balance, new_claimable_rewards))
+    // global_index += claimable_rewards / total_balance;
+    if !state.total_staked.is_zero() {
+        state.global_index = state.global_index.add(Decimal256::from_ratio(
+            new_claimable_rewards,
+            state.total_staked,
+        ));
     }
+    // I am saving the state here because i need deps to query the current balance
+    STATE.save(deps.storage, &state)?;
+
+    Ok((current_balance, new_claimable_rewards))
 }
 
 pub fn execute_update_holders_rewards(
@@ -139,11 +132,14 @@ pub fn execute_update_holders_rewards(
     if state.total_staked.is_zero() {
         return Err(ContractError::NoBond {});
     }
-    //validate address
+    // Validate address
     let addr = maybe_addr(deps.api, address)?.unwrap_or(info.sender);
-    let mut holder = HOLDERS.load(deps.storage, &Addr::unchecked(addr.clone()))?;
+
+    let mut holder = HOLDERS.load(deps.storage, &addr)?;
+
     update_holders_rewards(deps.branch(), &mut state, env, &mut holder)?;
-    HOLDERS.save(deps.storage, &Addr::unchecked(addr), &holder)?;
+
+    HOLDERS.save(deps.storage, &addr, &holder)?;
     STATE.save(deps.storage, &state)?;
 
     let res = Response::new()
@@ -162,24 +158,22 @@ pub fn update_holders_rewards(
 ) -> Result<Uint128, ContractError> {
     let config = CONFIG.load(deps.storage)?;
 
-    //update reward index
+    // Update reward index
     update_reward_index(state, config, deps.branch(), env)?;
 
-    let rewards_uint128;
-
-    //index_diff = global_index - holder.index;
+    // index_diff = global_index - holder.index;
     let index_diff: Decimal256 = state.global_index - holder.index;
 
     //reward_amount = holder.balance * index_diff + holder.pending_rewards;
     let reward_amount = Decimal256::from_ratio(holder.balance, Uint256::one())
         .checked_mul(index_diff)?
         .checked_add(holder.dec_rewards)?;
+
     let decimals = get_decimals(reward_amount)?;
 
-    //floor(reward_amount)
-    rewards_uint128 = (reward_amount * Uint256::one())
-        .try_into()
-        .unwrap_or(Uint128::zero());
+    // floor(reward_amount)
+    let rewards_uint128 = (reward_amount * Uint256::one()).try_into()?;
+
     holder.dec_rewards = decimals;
     holder.pending_rewards += rewards_uint128;
     holder.index = state.global_index;
@@ -194,31 +188,26 @@ pub fn execute_receive_reward(
     let mut state = STATE.load(deps.storage)?;
     let config = CONFIG.load(deps.storage)?;
 
-    let mut holder = HOLDERS.load(deps.storage, &Addr::unchecked(info.sender.as_str()))?;
+    let mut holder = HOLDERS.load(deps.storage, &info.sender)?;
+
     if holder.balance.is_zero() {
         return Err(ContractError::NoBond {});
     }
+
     update_holders_rewards(deps.branch(), &mut state, env, &mut holder)?;
-
-    HOLDERS.save(
-        deps.storage,
-        &Addr::unchecked(info.sender.as_str()),
-        &holder,
-    )?;
-
-    //send rewards to the holder
-    let send_msg = CosmosMsg::Bank(BankMsg::Send {
-        to_address: info.sender.to_string(),
-        amount: vec![Coin {
-            denom: config.reward_denom.to_string(),
-            amount: holder.pending_rewards,
-        }],
-    });
 
     if holder.pending_rewards.is_zero() {
         return Err(ContractError::NoRewards {});
     }
 
+    let rewards = holder.pending_rewards;
+
+    // deduct the rewards from the total rewards
+    state.prev_reward_balance = state
+        .prev_reward_balance
+        .checked_sub(holder.pending_rewards)?;
+
+    // reset the pending rewards
     holder.pending_rewards = Uint128::zero();
 
     HOLDERS.save(
@@ -226,6 +215,15 @@ pub fn execute_receive_reward(
         &Addr::unchecked(info.sender.as_str()),
         &holder,
     )?;
+    //send rewards to the holder
+    let send_msg = CosmosMsg::Bank(BankMsg::Send {
+        to_address: info.sender.to_string(),
+        amount: vec![Coin {
+            denom: config.reward_denom.to_string(),
+            amount: rewards,
+        }],
+    });
+
     Ok(Response::new()
         .add_message(send_msg)
         .add_attribute("action", "receive_reward")
@@ -286,6 +284,8 @@ pub fn execute_withdraw(
 ) -> Result<Response, ContractError> {
     let mut state = STATE.load(deps.storage)?;
     let config = CONFIG.load(deps.storage)?;
+
+    nonpayable(&info)?;
     if !info.funds.is_empty() {
         return Err(ContractError::DoNotSendFunds {});
     }
@@ -339,15 +339,12 @@ pub fn execute_update_config(
 ) -> Result<Response, ContractError> {
     let old_config: Config = CONFIG.load(deps.storage)?;
 
-    //check if admin is an valid address and set admin
-    let admin = match admin {
-        Some(admin) => deps.api.addr_validate(&admin)?,
-        None => old_config.clone().admin,
-    };
-
     if info.sender != old_config.clone().admin {
         return Err(ContractError::Unauthorized {});
     };
+
+    //check if admin is an valid address and set admin
+    let admin = maybe_addr(deps.api, admin)?.unwrap_or(old_config.clone().admin);
 
     let config = Config {
         staked_token_denom: staked_token_denom.unwrap_or(old_config.staked_token_denom),
