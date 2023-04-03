@@ -54,7 +54,7 @@ pub fn execute(
 ) -> Result<Response, ContractError> {
     match msg {
         ExecuteMsg::BondStake {} => execute_bond(deps, env, info),
-        ExecuteMsg::UpdateRewardIndex {} => execute_update_reward_index(deps, env),
+        ExecuteMsg::UpdateRewardIndex {} => execute_update_reward_index(deps, env, info),
         ExecuteMsg::UpdateHoldersReward { address } => {
             execute_update_holders_rewards(deps, env, info, address)
         }
@@ -65,11 +65,17 @@ pub fn execute(
             reward_denom,
             admin,
         } => execute_update_config(deps, env, info, staked_token_denom, reward_denom, admin),
+        ExecuteMsg::AdminWithdraw {} => execute_admin_withdraw(deps, env, info),
     }
 }
 
 /// Increase global_index according to claimed rewards amount
-pub fn execute_update_reward_index(deps: DepsMut, env: Env) -> Result<Response, ContractError> {
+pub fn execute_update_reward_index(
+    deps: DepsMut,
+    env: Env,
+    info: MessageInfo,
+) -> Result<Response, ContractError> {
+    nonpayable(&info)?;
     let mut state = STATE.load(deps.storage)?;
     let config = CONFIG.load(deps.storage)?;
 
@@ -126,6 +132,7 @@ pub fn execute_update_holders_rewards(
     info: MessageInfo,
     address: Option<String>,
 ) -> Result<Response, ContractError> {
+    nonpayable(&info)?;
     let mut state = STATE.load(deps.storage)?;
 
     // Zero staking check
@@ -185,6 +192,7 @@ pub fn execute_receive_reward(
     env: Env,
     info: MessageInfo,
 ) -> Result<Response, ContractError> {
+    nonpayable(&info)?;
     let mut state = STATE.load(deps.storage)?;
     let config = CONFIG.load(deps.storage)?;
 
@@ -282,15 +290,12 @@ pub fn execute_withdraw(
     info: MessageInfo,
     amount: Option<Uint128>,
 ) -> Result<Response, ContractError> {
+    nonpayable(&info)?;
     let mut state = STATE.load(deps.storage)?;
     let config = CONFIG.load(deps.storage)?;
 
-    nonpayable(&info)?;
-    if !info.funds.is_empty() {
-        return Err(ContractError::DoNotSendFunds {});
-    }
-
     let mut holder = HOLDERS.load(deps.storage, &info.sender)?;
+
     let withdraw_amount = amount.unwrap_or(holder.balance);
 
     if holder.balance < withdraw_amount {
@@ -299,13 +304,26 @@ pub fn execute_withdraw(
 
     update_holders_rewards(deps.branch(), &mut state, env.clone(), &mut holder)?;
 
+    let rewards = holder.pending_rewards;
+    holder.balance = (holder.balance.checked_sub(withdraw_amount))?;
+    state.total_staked = (state.total_staked.checked_sub(withdraw_amount))?;
+    holder.pending_rewards = Uint128::zero();
+
+    STATE.save(deps.storage, &state)?;
+    // Remove holder if balance is zero
+    if holder.balance.is_zero() {
+        HOLDERS.remove(deps.storage, &info.sender);
+    } else {
+        HOLDERS.save(deps.storage, &info.sender, &holder)?;
+    }
+
     //send rewards and withdraw amount to the holder
     let res: Response = Response::new()
         .add_message(CosmosMsg::Bank(BankMsg::Send {
             to_address: info.sender.to_string(),
             amount: vec![Coin {
                 denom: config.reward_denom.to_string(),
-                amount: holder.pending_rewards,
+                amount: rewards,
             }],
         }))
         .add_message(CosmosMsg::Bank(BankMsg::Send {
@@ -319,12 +337,6 @@ pub fn execute_withdraw(
         .add_attribute("holder_address", info.sender.clone())
         .add_attribute("amount", withdraw_amount)
         .add_attribute("rewards claimed", holder.pending_rewards);
-
-    holder.balance = (holder.balance.checked_sub(withdraw_amount))?;
-    state.total_staked = (state.total_staked.checked_sub(withdraw_amount))?;
-    holder.pending_rewards = Uint128::zero();
-    STATE.save(deps.storage, &state)?;
-    HOLDERS.save(deps.storage, &info.sender, &holder)?;
     Ok(res)
 }
 
@@ -337,6 +349,7 @@ pub fn execute_update_config(
     reward_denom: Option<String>,
     admin: Option<String>,
 ) -> Result<Response, ContractError> {
+    nonpayable(&info)?;
     let old_config: Config = CONFIG.load(deps.storage)?;
 
     if info.sender != old_config.clone().admin {
@@ -359,6 +372,51 @@ pub fn execute_update_config(
         .add_attribute("staked_token_denom", config.staked_token_denom)
         .add_attribute("reward_denom", config.reward_denom)
         .add_attribute("admin", config.admin);
+
+    Ok(res)
+}
+
+pub fn execute_admin_withdraw(
+    deps: DepsMut,
+    env: Env,
+    info: MessageInfo,
+) -> Result<Response, ContractError> {
+    nonpayable(&info)?;
+    let config = CONFIG.load(deps.storage)?;
+
+    if info.sender != config.admin {
+        return Err(ContractError::Unauthorized {});
+    };
+
+    // Query reward balance
+    let reward_balance = deps
+        .querier
+        .query_balance(env.contract.address.clone(), &config.reward_denom)?
+        .amount;
+
+    let bonded_balance = deps
+        .querier
+        .query_balance(env.contract.address.clone(), &config.staked_token_denom)?
+        .amount;
+
+    let res: Response = Response::new()
+        .add_message(CosmosMsg::Bank(BankMsg::Send {
+            to_address: info.sender.to_string(),
+            amount: vec![Coin {
+                denom: config.reward_denom.to_string(),
+                amount: reward_balance,
+            }],
+        }))
+        .add_message(CosmosMsg::Bank(BankMsg::Send {
+            to_address: info.sender.to_string(),
+            amount: vec![Coin {
+                denom: config.staked_token_denom.to_string(),
+                amount: bonded_balance,
+            }],
+        }))
+        .add_attribute("action", "admin_withdraw")
+        .add_attribute("reward_amount", reward_balance)
+        .add_attribute("bonded_amount", bonded_balance);
 
     Ok(res)
 }

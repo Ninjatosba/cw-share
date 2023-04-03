@@ -16,6 +16,8 @@ pub enum ExecuteMsg {
     ////////////////////
     /// Owner's operations
     ///////////////////
+    // Withdraw tokens from contract
+    AdminWithdraw {},
 
     /// Update the reward index
     UpdateRewardIndex {},
